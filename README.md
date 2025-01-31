@@ -96,7 +96,7 @@ Detailed instructions on how to use the code and run simulations can be found in
 This project is licensed under the MIT License. See the LICENSE.md file for details.
 
 ```ruby
-git clone https://github.com/Amin-Nadimy/Shallow_Water_Equations_NN4PDEs.git
+git clone https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids.git
 ```
 ```ruby
 cd Shallow_Water_Equations_NN4PDEs
