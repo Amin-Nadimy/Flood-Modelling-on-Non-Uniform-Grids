@@ -44,8 +44,8 @@ To get started with the code, clone this repository using the code at the bottom
   ]
 }
 ```
-
-
+<!-- <img src="https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids/blob/main/Demo/flexible_L.png" width="512" /> -->
+<img src="https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids/blob/main/Demo/flexible_L.png" width="1024" />
 
 
 ---
@@ -62,7 +62,7 @@ To get started with the code, clone this repository using the code at the bottom
 ```
 ---
 
-https://github.com/Amin-Nadimy/Shallow_Water_Equations_NN4PDEs/assets/71018515/f44fed0b-9b45-499a-8383-9e65b6193202
+
 
 ## Installation
 
