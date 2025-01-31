@@ -45,7 +45,8 @@ To get started with the code, clone this repository using the code at the bottom
 }
 ```
 
-<!-- <img src="https://github.com/Amin-Nadimy/Shallow_Water_Equations_-SWE-/blob/main/SWE_2.gif" width="512" /> -->
+<!-- <img src="https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids/blob/main/Demo/flexible_L.png" width="512" /> -->
+
 
 ---
 ## Repository Structure
