@@ -53,8 +53,7 @@ To get started with the code, clone this repository using the code at the bottom
 ```plaintext
 . Solving the Discretised Shallow Water Equations Using Non-Uniform Grids and Machine-Learning Libraries
 ├── Demos/                                 # Folder for animation files
-│   ├── 68-hours_simulation.mp4            # mp4 format of the 68 h simulation results
-│   └── SWE_2_gif.gif                      # gif format of the 68 h simulation results
+│   └── flexible_L.png                     # Water depth map after 37.5 h of flooding
 ├── Source_code/                           # Python codes for Linea, Quadratic and parallel simulations
 │   ├── Linear/                     
 │           ├── AI4SWE_Linear.py           # Main code
