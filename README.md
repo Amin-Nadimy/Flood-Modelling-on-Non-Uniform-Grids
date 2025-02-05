@@ -69,7 +69,7 @@ git clone https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids.gi
 │   └── flexible_L.png                     # Water depth map after 37.5 h of flooding
 ├── Source_code/                           # Python codes for Linea, Quadratic and parallel simulations
 │   ├── Linear/                     
-│           ├── SWE_semi.py                # Main code
+│           ├── NN4SWE_semi.py                # Main code
 │           └── multi_subdomain_lib.py     # External library
 ```
 ---
