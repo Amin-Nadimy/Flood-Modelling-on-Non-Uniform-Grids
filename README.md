@@ -112,4 +112,4 @@ This project is licensed under the MIT License. See the LICENSE.md file for deta
 
 ## Contact and references
 For more information please contact me via:
-- Email: amin.nadimy19@imperial.ac.uk
+- Email: amin.nadimy@gmail.com
