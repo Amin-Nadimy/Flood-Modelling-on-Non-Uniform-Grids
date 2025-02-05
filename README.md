@@ -67,10 +67,14 @@ git clone https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids.gi
 . Solving the Discretised Shallow Water Equations Using Non-Uniform Grids and Machine-Learning Libraries
 ├── Demos/                                 # Folder for animation files
 │   └── flexible_L.png                     # Water depth map after 37.5 h of flooding
+├── Documents/                             # required documents
+│   ├── carlisle-5m.dem.raw                # input file (topography)
+│   ├── carlisle.bci                       # input file (source coordinates)
+│   └── flowrates,csv                      # input file (flowrates) 
 ├── Source_code/                           # Python codes for Linea, Quadratic and parallel simulations
 │   ├── Linear/                     
 │           ├── NN4SWE_semi.py                # Main code
-│           └── multi_subdomain_lib.py     # External library
+└──         └── multi_subdomain_lib.py     # External library
 ```
 ---
 
