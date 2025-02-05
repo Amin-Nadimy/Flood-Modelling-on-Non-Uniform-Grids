@@ -1,4 +1,4 @@
-#  Copyright (C) 2023
+#  Copyright (C) 2025
 #  
 #  Amin Nadimy, Boyang Chen, Zimo Chen, Claire Heaney, Christopher Pain
 #  Applied Modelling and Computation Group
@@ -179,7 +179,7 @@ w2 = torch.reshape(w2,(1,1,3,3))
 w3 = torch.reshape(w3,(1,1,3,3))
 wm = torch.reshape(wm,(1,1,3,3))
 
-path = './'
+path = './Documents/'
 # # # ################################### # # #
 # # # #######   Initialisation ########## # # #
 # # # ################################### # # #
@@ -229,7 +229,7 @@ It returns the coordinates of the sources based  on the original size of the dom
 '''
 x_origin = 338500 ; y_origin = 554700
 
-df = pd.read_csv(f'{path}T07/carlisle.bci', delim_whitespace=True)
+df = pd.read_csv(f'{path}carlisle.bci', delim_whitespace=True)
 
 x_upstream1 = [] ; y_upstream1 = []
 x_upstream2 = [] ; y_upstream2 = []
@@ -314,7 +314,7 @@ y_upstream2 = scale_no_source_coor(y_upstream2, source1_ratio)
 y_upstream3 = scale_no_source_coor(y_upstream3, source1_ratio)
 
 
-df = pd.read_csv(f'{path}T07/flowrates.csv', delim_whitespace=True)
+df = pd.read_csv(f'{path}flowrates.csv', delim_whitespace=True)
 rate1 = df['upstream1']/5
 rate2 = df['upstream2']/5
 rate3 = df['upstream3']/5
