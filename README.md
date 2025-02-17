@@ -13,9 +13,9 @@ This repository contains the implementation of a novel approach for solving the 
 
 ## Getting Started
 To get started with the code, clone this repository using the code at the bottom of this page or click on each file to download them separately or click on the links below:
-- [Carlisle Bathymetry](https://github.com/Amin-Nadimy/Shallow_Water_Equations_NN4PDEs/blob/main/carlisle-5m.dem.raw)
+- [Carlisle Bathymetry](https://github.com/Amin-Nadimy/Shallow_Water_Equations_NN4PDEs/blob/main/Documents/carlisle-5m.dem.raw)
 - [Inlet Points](https://github.com/Amin-Nadimy/Shallow_Water_Equations_NN4PDEs/blob/main/carlisle.bci)
-- [Flowrates](https://github.com/Amin-Nadimy/Shallow_Water_Equations_NN4PDEs/blob/main/flowrates.csv)
+- [Flowrates](https://github.com/Amin-Nadimy/Shallow_Water_Equations_NN4PDEs/blob/main/Documents/flowrates.csv)
 
 Create a folder on your computer using the terminal and navigate to the folder:
 ```ruby
