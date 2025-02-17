@@ -112,7 +112,21 @@ Detailed instructions on how to use the code and run simulations can be found in
 ## License
 This project is licensed under the MIT License. See the LICENSE.md file for details.
 
+## Citation
+If you use this project or the related paper in your research, please cite it as follows:
 
+
+### GitHub Repository Citation:
+To cite this GitHub repository, please use the following `bibtex` entry:
+
+```bibtex
+@misc{nadimy2025no_uniformshallow,
+  author = {Amin Nadimy},
+  title = {Solving the Discretised Shallow Water Equations Using Non-Uniform Grids and Machine-Learning Libraries},
+  year = {2025},
+  url = {https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids}
+}
+```
 
 ## Contact and references
 For more information please contact me via:
