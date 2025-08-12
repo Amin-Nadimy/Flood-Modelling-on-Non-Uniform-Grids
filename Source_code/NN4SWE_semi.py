@@ -49,187 +49,104 @@ else:
 print(device)
 is_gpu = torch.cuda.is_available()
 
+#######################################################
 ################# Numerical parameters ################
-ntime = 489600              # Time steps
-n_out = 100                 # Results output
-nrestart = 0                # Last time step for restart
-ctime_old = 0               # Last ctime for restart
-mgsolver = True             # Multigrid solver for non-hydrostatic pressure
-nsafe = 0.5                 # Continuty equation residuals
-ctime = 0                   # Initialise ctime
-save_fig = True             # Save results
-Restart = False             # Restart
-eplsion_k = 1e-04          # Stablisatin factor in Petrov-Galerkin for velocity
-epsilon_eta = 1e-04         # Stablisatin factor in Petrov-Galerkin for height
-beta = 4                    # diagonal factor in mass term
-real_time = 0
+ntime = 489600              
+n_out = 10000               
+nrestart = 0              
+ctime_old = 0           
+mgsolver = True           
+nsafe = 0.5              
+ctime = 0                   
+save_fig = False            
+Restart = False          
+epsilon_k = 1e-04         
+epsilon_eta = 1e-04      
+beta = 4                   
+real_time = torch.tensor([0.0], device=device)
 istep = 0
-manning = 0.055
 
-dt = 0.5
-################# Physical parameters #################
-g_x = 0;g_y = 0;g_z = 9.81  # Gravity acceleration (m/s2)
-rho = 1/g_z                 # Resulting density
+# # # ################################### # # #
+# # # ######   Physical parameters    ### # # #
+# # # ################################### # # #
+dt = torch.tensor([0.5], device=device)
+g_x = 0;g_y = 0;g_z = 9.81  
+rho = 1/g_z             
 
-global_nx = 952
-global_ny = 612
+global_ny, global_nx = 612, 952
+hal = torch.tensor(4, device=device)
 
-# -------------------------------------------------- 21 subdomains
-nx =  [250,100,200,100,200,global_nx-850, 150, 150, 200, 100, 250, 270, 60, 60, 270, global_nx - 600, 50, 520, 130, 100, global_nx-750]
-ny =  [global_ny-430, global_ny-430, global_ny-430, global_ny-430, global_ny-430, global_ny-350, 100, 100, 100, 100, 80, 230, 150, 80, 230, 170, 80, 100, 100, 180, 180]
+no_domains = 7
+x = [0, 800, 0,  634, 0,   150, 700]
+y = [0, 0,   90, 90,  300, 300, 300]
+nx = [800, global_nx-800, 634, global_nx-634, 150,           550,            global_nx-700]
+ny = [90,  90,            210, 210,           global_ny-300, global_ny-300,  global_ny-300]
+ratio_list = [0.5, 1, 2, 2, 0.5, 1, 0.5]
 
-x = [0, 250, 350, 550, 650, 850, 0, 150, 300, 500, 600, 0, 270, 270, 330, 600, 600, 0, 520, 650, 750]
-y = [430, 430, 430, 430, 430, 350, 330, 330, 330, 330, 350, 100, 180, 100, 100, 180, 100, 0, 0, 0, 0]
-ratio_list = [0.5,1,0.5,1,0.5, 0.5,0.5,1,0.5,2, 2,2,2,0.5,2, 2,0.5,0.5,1,0.5,0.5]
-# ------------------------------------------------------------------
-no_domains = len(x)
-dx = [5]*no_domains
+dx = torch.tensor([5.0]*no_domains, device=device)
 dy = dx
 
-# initialise all subdomains without applying ratio
 sd = fl.init_subdomains('linear', no_domains, nx, ny, dx, dy, x, y, ratio_list, epsilon_eta, dt)
-
-# Find neighbors
 fl.find_neighbours(sd)
-
-# Set physical boundaries
 fl.set_physical_boundaries(sd, global_nx, global_ny)
 
-# resize al sd variables based on ration
+print('Before scaling')
+for i in sd:
+    print(f'{i.index}: ({i.nx},{i.ny}), dx = {i.dx}')
+
+print(''); print('After scaling')    
 fl.resize_subdomains(sd, ratio_list)
 
-def create_halos(sd):
-    for ele in range(no_domains):
-        # Get the size of the block along the x and y axes
-        ny, nx = sd[ele].values_u.shape[2], sd[ele].values_u.shape[3]
 
-        # Create a list where each element is a tensor corresponding to a face of the block
-        sd[ele].halo_u = [torch.zeros((nx,)),  # Bottom face
-                        torch.zeros((ny,)),  # Left face
-                        torch.zeros((ny,)),  # Right face
-                        torch.zeros((nx,))]  # Top face
+for i in sd:
+    print(f'{i.index}: ({i.nx},{i.ny}), dx = {i.dx} ratio = {i.ratio}')
+    i.nx = torch.tensor(i.nx).to(device)
+    i.ny = torch.tensor(i.ny).to(device)
 
-        sd[ele].halo_v = [torch.zeros((nx,)),  # Bottom face
-                        torch.zeros((ny,)),  # Left face
-                        torch.zeros((ny,)),  # Right face
-                        torch.zeros((nx,))]  # Top face
 
-        sd[ele].halo_b_u = [torch.zeros((nx,)),  # Bottom face
-                            torch.zeros((ny,)),  # Left face
-                            torch.zeros((ny,)),  # Right face
-                            torch.zeros((nx,))]  # Top face
-
-        sd[ele].halo_b_v = [torch.zeros((nx,)),  # Bottom face
-                            torch.zeros((ny,)),  # Left face
-                            torch.zeros((ny,)),  # Right face
-                            torch.zeros((nx,))]  # Top face
-
-        sd[ele].halo_h = [torch.zeros((nx,)),  # Bottom face
-                        torch.zeros((ny,)),  # Left face
-                        torch.zeros((ny,)),  # Right face
-                        torch.zeros((nx,))]  # Top face
-
-        sd[ele].halo_hh = [torch.zeros((nx,)),  # Bottom face
-                        torch.zeros((ny,)),  # Left face
-                        torch.zeros((ny,)),  # Right face
-                        torch.zeros((nx,))]  # Top face
-
-        sd[ele].halo_dif_h = [torch.zeros((nx,)),  # Bottom face
-                            torch.zeros((ny,)),  # Left face
-                            torch.zeros((ny,)),  # Right face
-                            torch.zeros((nx,))]  # Top face
-
-        sd[ele].halo_eta = [torch.zeros((nx,)),  # Bottom face
-                            torch.zeros((ny,)),  # Left face
-                            torch.zeros((ny,)),  # Right face
-                            torch.zeros((nx,))]  # Top face
-
-        sd[ele].halo_eta1 = [torch.zeros((nx,)),  # Bottom face
-                            torch.zeros((ny,)),  # Left face
-                            torch.zeros((ny,)),  # Right face
-                            torch.zeros((nx,))]  # Top face
-
-    return
-
-# Create halos for each block :: sd[ele].halo_u[iface]
-create_halos(sd)
-
-# # # ################################### # # #
-# # # ######    Linear Filter      ###### # # #
-# # # ################################### # # #
-bias_initializer = torch.tensor([0.0], device=device)
-# Isotropic Laplacian
-w1 = torch.tensor([[[[1/3], [ 1/3] , [1/3]],
-                    [[1/3], [-8/3] , [1/3]],
-                    [[1/3], [ 1/3] , [1/3]]]])
-# Gradient in x
-w2 = torch.tensor([[[[1/12], [0.0], [-1/12]],
-                    [[1/3] , [0.0], [-1/3]] ,
-                    [[1/12], [0.0], [-1/12]]]])
-# Gradient in y
-w3 = torch.tensor([[[[-1/12], [-1/3], [-1/12]],
-                    [[0.0]  , [0.0] , [0.0]]  ,
-                    [[1/12] , [1/3] , [1/12]]]])
-# Consistant mass matrix
-wm = torch.tensor([[[[0.028], [0.11] , [0.028]],
-                    [[0.11] , [0.44] , [0.11]],
-                    [[0.028], [0.11] , [0.028]]]])
-w1 = torch.reshape(w1,(1,1,3,3))
-w2 = torch.reshape(w2,(1,1,3,3))
-w3 = torch.reshape(w3,(1,1,3,3))
-wm = torch.reshape(wm,(1,1,3,3))
-
-path = './Documents/'
-# # # ################################### # # #
-# # # #######   Initialisation ########## # # #
-# # # ################################### # # #
-# Open the .raw file for reading
-with open(f'{path}carlisle-5m.dem.raw', 'r') as file:
+with open('carlisle-5m.dem.raw', 'r') as file:
     # Read the entire content of the file and split it into individual values
     data = file.read().split()
-
-# Convert the string values to floats
 mesh = torch.tensor([float(value) for value in data[12:]])
-
-# Now, float_values contains a list of floating-point numbers from the .raw file
-
 mesh = mesh.reshape(int(data[3]),int(data[1]))
-# make the size even numbers (left, right, top, bottom) padding
-mesh = F.pad(mesh, (0,1,0,1), mode='constant', value=0)
-mesh[:,-1] = mesh[:,-2]
-mesh[-1,:] = mesh[-2,:]
+
+mesh = torch.nn.functional.interpolate(
+    mesh.unsqueeze(0).unsqueeze(0),
+    size=(mesh.shape[0] + 1, mesh.shape[1] + 1),
+    mode='bilinear',
+    align_corners=True
+).squeeze(0).squeeze(0)
 
 
-# Plot the mesh
-fig, ax = plt.subplots(figsize=(9.52,6.11))
+def extract_subdomains(mesh, x_coords: list, y_coords: list, nx_list: list, ny_list: list, ratio_list: list)->list:
+    '''
+    Splits the mesh into the tiles with the same size of the subdomains
+    x_coods: list of x coordinates of the top left point of all subdomain relative the global domain
+    y_coods: list of y coordinates of the top left point of all subdomain relative the global domain
+    nx_list: list of all subdomain size in x
+    ny_list: list of all subdomain size in y
+    '''
+    subdomains = []
+    for x, y, nx, ny in zip(x_coords, y_coords, nx_list, ny_list):
+        subdomain = mesh[y:y+ny, x:x+nx]
+        subdomains.append(subdomain)
+    
+    resampled_subdomains = []
+    for subdomain, ratio in zip(subdomains, ratio_list):
+        new_size = (int(subdomain.shape[0] * ratio), int(subdomain.shape[1] * ratio))
+        resampled_subdomain = F.interpolate(subdomain.unsqueeze(0).unsqueeze(0), size=new_size, mode='bilinear', align_corners=False)
+        resampled_subdomain = resampled_subdomain.squeeze(0).squeeze(0)
+        resampled_subdomains.append(resampled_subdomain)
+    
+    del subdomains
+    return resampled_subdomains
 
-plt.imshow(mesh)
+        
+tiles = extract_subdomains(mesh,x, y, nx, ny, ratio_list)
 
-# Draw the boundaries of the subdomains
-for ele in sd:
-    r = 1# ele.ratio
-    x_coords = [ele.x0/r, ele.x1/r, ele.x3/r, ele.x2, ele.x0/r]
-    y_coords = [ele.y0/r, ele.y1/r, ele.y3/r, ele.y2, ele.y0/r]
-    ax.plot(x_coords, y_coords, marker='o', label=f'Subdomain {ele.index}')
-    ax.text((ele.x0 + ele.x1) / 2/r, (ele.y0/r + ele.y2) / 2, f'{ele.index}', fontsize=18, ha='center', color='white')
-
-# Splits the mesh into the tiles with the same size of the subdomains          
-tiles = fl.extract_subdomains(mesh,x, y, nx, ny, ratio_list)
-
-# copy tiles into sd.values_H
-for i in range(no_domains):
-    sd[i].values_H[0,0,:,:] = tiles[i]
-
-for ele in range(no_domains):
-    sd[ele].values_h = sd[ele].values_H
-    sd[ele].values_hp[0,0,1:-1,1:-1] = sd[ele].values_H
-
-'''
-It returns the coordinates of the sources based  on the original size of the domain
-'''
 x_origin = 338500 ; y_origin = 554700
 
-df = pd.read_csv(f'{path}carlisle.bci', delim_whitespace=True)
+df = pd.read_csv(f'carlisle.bci', delim_whitespace=True)
 
 x_upstream1 = [] ; y_upstream1 = []
 x_upstream2 = [] ; y_upstream2 = []
@@ -247,15 +164,6 @@ for index, row in df.iterrows():
         x_upstream3.append((df['x'][index] - x_origin)//5)
         y_upstream3.append((df['y'][index] - y_origin)//5)
 
-
-plt.scatter(x_upstream1, y_upstream1, label='upstream 1', color='red', marker='o')
-plt.scatter(x_upstream2, y_upstream2, label='upstream 2', color='blue', marker='x')
-plt.scatter(x_upstream3, y_upstream3, label='upstream 3', color='green', marker='s')
-plt.legend()
-plt.xlim(0,len(mesh[0,:]))
-
-
-# Here the y coordinates must be reversed as the origin is at the top left of the domain not bottom left
 y_upstream1 = [global_ny-i for i in y_upstream1]
 y_upstream2 = [global_ny-i for i in y_upstream2]
 y_upstream3 = [global_ny-i for i in y_upstream3]
@@ -269,14 +177,20 @@ source_1_sd_idx = list(map(lambda xy: find_index(xy[0], xy[1]), zip(x_upstream1,
 source_2_sd_idx = list(map(lambda xy: find_index(xy[0], xy[1]), zip(x_upstream2, y_upstream2)))
 source_3_sd_idx = list(map(lambda xy: find_index(xy[0], xy[1]), zip(x_upstream3, y_upstream3)))
 
-# update the source coordinates based on the x2 of each subdomain
-x_upstream1 = list(map(lambda i: int((x_upstream1[i] - sd[source_1_sd_idx[i]].x2) ), range(len(x_upstream1))))
-x_upstream2 = list(map(lambda i: int((x_upstream2[i] - sd[source_2_sd_idx[i]].x2) ), range(len(x_upstream2))))
-x_upstream3 = list(map(lambda i: int((x_upstream3[i] - sd[source_3_sd_idx[i]].x2) ), range(len(x_upstream3))))
+df = pd.read_csv(f'flowrates.csv', delim_whitespace=True)
+rate1 = torch.tensor(df['upstream1'].values / 5, device=device)
+rate2 = torch.tensor(df['upstream2'].values / 5, device=device)
+rate3 = torch.tensor(df['upstream3'].values / 5, device=device)        
 
-y_upstream1 = list(map(lambda i: int((y_upstream1[i] - sd[source_1_sd_idx[i]].y2) ), range(len(y_upstream1))))
-y_upstream2 = list(map(lambda i: int((y_upstream2[i] - sd[source_2_sd_idx[i]].y2-1) ), range(len(y_upstream2))))
-y_upstream3 = list(map(lambda i: int((y_upstream3[i] - sd[source_3_sd_idx[i]].y2-1) ), range(len(y_upstream3))))
+
+# update the source coordinates based on the x2 of each subdomain
+x_upstream1 = list(map(lambda i: x_upstream1[i], range(len(x_upstream1))))
+x_upstream2 = list(map(lambda i: x_upstream2[i], range(len(x_upstream2))))
+x_upstream3 = list(map(lambda i: x_upstream3[i], range(len(x_upstream3))))
+
+y_upstream1 = list(map(lambda i: y_upstream1[i], range(len(y_upstream1))))
+y_upstream2 = list(map(lambda i: y_upstream2[i], range(len(y_upstream2))))
+y_upstream3 = list(map(lambda i: y_upstream3[i], range(len(y_upstream3))))
 
 def scale_no_source_coor(a, rr):
     '''
@@ -313,36 +227,479 @@ y_upstream1 = scale_no_source_coor(y_upstream1, source1_ratio)
 y_upstream2 = scale_no_source_coor(y_upstream2, source1_ratio)
 y_upstream3 = scale_no_source_coor(y_upstream3, source1_ratio)
 
+global_ny = 844
+global_nx = 1317
 
-df = pd.read_csv(f'{path}flowrates.csv', delim_whitespace=True)
-rate1 = df['upstream1']/5
-rate2 = df['upstream2']/5
-rate3 = df['upstream3']/5
+input_shape = (1,1,global_ny, global_nx)
+
+new_x0 = [639,  1045, 0,    0,   1220, 639,  1191]
+new_y0 = [330,  320,  424,  0,   165,    0,    0]
 
 
-def get_source(time):
-    '''
-    sets the source based on variable time compatible with the real data
-    '''
-    global rate1, rate2, rate3
+values_H = torch.zeros(input_shape, device=device)
+for i in range(len(sd)):
+    values_H[0,0, new_y0[i]: new_y0[i] + sd[i].ny,         
+                  new_x0[i]: new_x0[i] + sd[i].nx ] = tiles[i]
+
+for i in range(no_domains):
+    sd[i].x0 = new_x0[i]
+    sd[i].x1 = new_x0[i] + sd[i].nx.item()
+    sd[i].x2 = new_x0[i]
+    sd[i].x3 = new_x0[i] + sd[i].nx.item()
     
-    indx = time // 900 # 900 is the time interval in the given time series
+    sd[i].y0 = new_y0[i] + sd[i].ny.item()
+    sd[i].y1 = new_y0[i] + sd[i].ny.item()
+    sd[i].y2 = new_y0[i]
+    sd[i].y3 = new_y0[i]
+
+def transform_middle_point(x0, x1, x2, x3, x5):
+    """
+    Transforms x1 to x4 based on the transformation of x0 → x3 and x2 → x5.
+
+    Args:
+        x0, x1, x2: original reference points (x1 is between x0 and x2)
+        x3, x5: new points corresponding to transformed x0 and x2
+
+    Returns:
+        x4: transformed version of x1
+    """
+    r = (x1 - x0) / (x2 - x0)
+    x4 = x3 + r * (x5 - x3)
+
+    return int(x4)
+
+for i in range(len(x_upstream1)):
+    s_idx= source_1_sd_idx[i]
+    x_upstream1[i] = transform_middle_point(x[s_idx], x_upstream1[i], x[s_idx]+sd[s_idx].nx, sd[s_idx].x0, sd[s_idx].x1)
+
+for i in range(len(y_upstream1)):
+    s_idx= source_1_sd_idx[i]
+    y_upstream1[i] = transform_middle_point(y[s_idx], y_upstream1[i], y[s_idx]+sd[s_idx].ny, sd[s_idx].y3, sd[s_idx].y0)
+
+for i in range(len(x_upstream2)):    
+    s_idx= source_2_sd_idx[i]
+    x_upstream2[i] = transform_middle_point(x[s_idx], x_upstream2[i], x[s_idx]+sd[s_idx].nx, sd[s_idx].x0, sd[s_idx].x1)
     
-    for i, s_idx in enumerate(source_1_sd_idx):
-        sd[s_idx].source_h[0,0,y_upstream1[i],x_upstream1[i]]     = ((rate1[indx+1] - rate1[indx])/900 * (time%900) + rate1[indx])/(4**(source1_ratio[i]-1))
+for i in range(len(y_upstream2)):
+    s_idx= source_2_sd_idx[i]
+    y_upstream2[i] = transform_middle_point(y[s_idx], y_upstream2[i], y[s_idx]+sd[s_idx].ny, sd[s_idx].y3, sd[s_idx].y0)
+
+for i in range(len(x_upstream3)):    
+    s_idx= source_3_sd_idx[i]
+    x_upstream3[i] = transform_middle_point(x[s_idx], x_upstream3[i], x[s_idx]+sd[s_idx].nx, sd[s_idx].x0, sd[s_idx].x1)
     
-    for i, s_idx in enumerate(source_2_sd_idx):
-        sd[s_idx].source_h[0,0,y_upstream2[i]-11,x_upstream2[i]]     = ((rate2[indx+1] - rate2[indx])/900 * (time%900) + rate2[indx])/(4**(source2_ratio[i]-1))
+for i in range(len(y_upstream3)):
+    s_idx= source_3_sd_idx[i]
+    y_upstream3[i] = transform_middle_point(y[s_idx], y_upstream3[i], y[s_idx]+sd[s_idx].ny, sd[s_idx].y3, sd[s_idx].y0)
+
+
+# ------------------------------------------------------------------------------- 2 to 0.5
+src_2x_half_x  = []
+src_2x_half_x += [i for i in range(sd[2].x0+sd[0].shared_indices['bottom'][2]['neig_start'], sd[2].x0+sd[0].shared_indices['bottom'][2]['neig_end'])]     # bottom sd0 part 1
+src_2x_half_x += [i for i in range(sd[3].x0+sd[0].shared_indices['bottom'][3]['neig_start'], sd[3].x0+sd[0].shared_indices['bottom'][3]['neig_end'])]     # bottom sd0 part 2
+src_2x_half_x += [i for i in range(sd[2].x0+sd[4].shared_indices['top'][2]['neig_start'],    sd[2].x0+sd[4].shared_indices['top'][2]['neig_end'])]        # top sd4
+src_2x_half_x += [i for i in range(sd[3].x0+sd[6].shared_indices['top'][3]['neig_start'],    sd[3].x0+sd[6].shared_indices['top'][3]['neig_end'])]        # top sd6
+
+src_2x_half_y = []
+src_2x_half_y += [sd[2].y3+2 for i in range(sd[0].shared_indices['bottom'][2]['neig_start'], sd[0].shared_indices['bottom'][2]['neig_end'])]     # bottom sd0 part 1
+src_2x_half_y += [sd[3].y3+2 for i in range(sd[0].shared_indices['bottom'][3]['neig_start'], sd[0].shared_indices['bottom'][3]['neig_end'])]     # bottom sd0 part 2
+src_2x_half_y += [sd[2].y0-2 for i in range(sd[4].shared_indices['top'][2]['neig_start'],    sd[4].shared_indices['top'][2]['neig_end'])]        # top sd4
+src_2x_half_y += [sd[3].y0-2 for i in range(sd[6].shared_indices['top'][3]['neig_start'],    sd[6].shared_indices['top'][3]['neig_end'])]        # top sd6
+# ------------------------------------------------------------------------------- 2 to 1
+src_2x_1_x  = []
+src_2x_1_x += [i for i in range(sd[3].x0+sd[1].shared_indices['bottom'][3]['neig_start'], sd[3].x0+sd[1].shared_indices['bottom'][3]['neig_end'])]        # bottom sd1
+src_2x_1_x += [i for i in range(sd[2].x0+sd[5].shared_indices['top'][2]['neig_start'],    sd[2].x0+sd[5].shared_indices['top'][2]['neig_end'])]           # top sd5
+
+src_2x_1_y = []
+src_2x_1_y += [sd[3].y3+2 for i in range(sd[1].shared_indices['bottom'][3]['neig_start'], sd[1].shared_indices['bottom'][3]['neig_end'])]        # bottom sd1
+src_2x_1_y += [sd[2].y0-2 for i in range(sd[5].shared_indices['top'][2]['neig_start'],    sd[5].shared_indices['top'][2]['neig_end'])]           # top sd5
+# ------------------------------------------------------------------------------- 2 to 2
+src_2x_2_x = []
+src_2x_2_x += [sd[3].x0+2 for i in range(sd[2].shared_indices['right'][3]['neig_start'], sd[2].shared_indices['right'][3]['neig_end'])]          # right sd2
+src_2x_2_x += [sd[2].x1-2 for i in range(sd[3].shared_indices['left'][2]['neig_start'],  sd[3].shared_indices['left'][2]['neig_end'])]           # left sd3
+
+src_2x_2_y  = []
+src_2x_2_y += [i for i in range(sd[3].y3, sd[3].y0)]         # right sd2
+src_2x_2_y += [i for i in range(sd[2].y3, sd[2].y0)]         # left sd3
+
+# ------------------------------------------------------------------------------- 1 to 0.5
+src_1x_half_x  = []
+src_1x_half_x += [sd[1].x0+2 for i in range(sd[0].shared_indices['right'][1]['neig_start'], sd[0].shared_indices['right'][1]['neig_end'])]       # right sd0
+src_1x_half_x += [sd[5].x0+2 for i in range(sd[4].shared_indices['right'][5]['neig_start'], sd[4].shared_indices['right'][5]['neig_end'])]       # right sd4
+src_1x_half_x += [sd[5].x1-2 for i in range(sd[6].shared_indices['left'][5]['neig_start'],  sd[6].shared_indices['left'][5]['neig_end'])]        # left sd6
+
+src_1x_half_y  = []
+src_1x_half_y += [i for i in range(sd[1].y3, sd[1].y0)]      # right sd0
+src_1x_half_y += [i for i in range(sd[5].y3, sd[5].y0)]      # right sd4
+src_1x_half_y += [i for i in range(sd[5].y3, sd[5].y0)]      # left sd6
+
+# ------------------------------------------------------------------------------- 1 to 1
+# ------------------------------------------------------------------------------- 1 to 2
+src_1x_2_x  = []
+src_1x_2_x += [i for i in range(sd[1].x0+sd[3].shared_indices['top'][1]['neig_start'],    sd[1].x0+sd[3].shared_indices['top'][1]['neig_end'])]           # top sd3
+src_1x_2_x += [i for i in range(sd[5].x0+sd[2].shared_indices['bottom'][5]['neig_start'], sd[5].x0+sd[2].shared_indices['bottom'][5]['neig_end'])]        # bottom sd2
+src_1x_2_x += [i for i in range(sd[5].x0+sd[3].shared_indices['bottom'][5]['neig_start'], sd[5].x0+sd[3].shared_indices['bottom'][5]['neig_end'])]        # bottom sd3
+
+src_1x_2_y  = []
+src_1x_2_y += [sd[1].y0-2 for i in range(sd[3].shared_indices['top'][1]['neig_start'],    sd[3].shared_indices['top'][1]['neig_end'])]           # top sd3
+src_1x_2_y += [sd[5].y3+2 for i in range(sd[2].shared_indices['bottom'][5]['neig_start'], sd[2].shared_indices['bottom'][5]['neig_end'])]        # bottom sd2
+src_1x_2_y += [sd[5].y3+2 for i in range(sd[3].shared_indices['bottom'][5]['neig_start'], sd[3].shared_indices['bottom'][5]['neig_end'])]        # bottom sd3
+
+# ------------------------------------------------------------------------------- 0.5 to 0.5
+# ------------------------------------------------------------------------------- 0.5 to 1
+src_half_1_x  = []
+src_half_1_x += [sd[0].x1-2 for i in range(sd[1].shared_indices['left'][0]['neig_start'],  sd[1].shared_indices['left'][0]['neig_end'])]       # left sd1
+src_half_1_x += [sd[4].x1-2 for i in range(sd[5].shared_indices['left'][4]['neig_start'],  sd[5].shared_indices['left'][4]['neig_end'])]       # left sd5
+src_half_1_x += [sd[6].x0+2 for i in range(sd[5].shared_indices['right'][6]['neig_start'], sd[5].shared_indices['right'][6]['neig_end'])]      # right sd5
+
+src_half_1_y  = []
+src_half_1_y += [ i for i in range(sd[0].y3,sd[0].y0)]       # left sd1
+src_half_1_y += [ i for i in range(sd[4].y3, sd[4].y0)]      # left sd5
+src_half_1_y += [ i for i in range(sd[6].y3, sd[6].y0)]      # right sd5
+
+# ------------------------------------------------------------------------------- 0.5 to 2
+src_half_2_x  = []
+src_half_2_x += [i for i in range(sd[0].x0+sd[2].shared_indices['top'][0]['neig_start'],    sd[0].x0+sd[2].shared_indices['top'][0]['neig_end'])]        # top sd2
+src_half_2_x += [i for i in range(sd[0].x0+sd[3].shared_indices['top'][0]['neig_start'],    sd[0].x0+sd[3].shared_indices['top'][0]['neig_end'])]        # top sd3
+src_half_2_x += [i for i in range(sd[4].x0+sd[2].shared_indices['bottom'][4]['neig_start'], sd[4].x0+sd[2].shared_indices['bottom'][4]['neig_end'])]     # bottom sd2
+src_half_2_x += [i for i in range(sd[6].x0+sd[3].shared_indices['bottom'][6]['neig_start'], sd[6].x0+sd[3].shared_indices['bottom'][6]['neig_end'])]     # bottom sd3
+
+src_half_2_y  = []
+src_half_2_y += [sd[0].y0-2 for i in range(sd[0].x0+sd[2].shared_indices['top'][0]['neig_start'],    sd[0].x0+sd[2].shared_indices['top'][0]['neig_end'])]        # top sd2
+src_half_2_y += [sd[0].y0-2 for i in range(sd[0].x0+sd[3].shared_indices['top'][0]['neig_start'],    sd[0].x0+sd[3].shared_indices['top'][0]['neig_end'])]        # top sd3
+src_half_2_y += [sd[4].y3+2 for i in range(sd[2].x0+sd[2].shared_indices['bottom'][4]['neig_start'], sd[2].x0+sd[2].shared_indices['bottom'][4]['neig_end'])]     # bottom sd2
+src_half_2_y += [sd[6].y3+2 for i in range(sd[6].x0+sd[3].shared_indices['bottom'][6]['neig_start'], sd[6].x0+sd[3].shared_indices['bottom'][6]['neig_end'])]     # bottom sd3
+
+
+# ------------------------------------------------------------------------------- 2 to 0.5
+rec_2x_half_x  = []
+rec_2x_half_x += [i for i in range(sd[0].x0+sd[0].shared_indices['bottom'][2]['my_start'], sd[0].x0+sd[0].shared_indices['bottom'][2]['my_end'])]     # bottom sd0 part 1
+rec_2x_half_x += [i for i in range(sd[0].x0+sd[0].shared_indices['bottom'][3]['my_start'], sd[0].x0+sd[0].shared_indices['bottom'][3]['my_end'])]     # bottom sd0 part 2
+rec_2x_half_x += [i for i in range(sd[4].x0+sd[4].shared_indices['top'][2]['my_start'],    sd[4].x0+sd[4].shared_indices['top'][2]['my_end'])]        # top sd4
+rec_2x_half_x += [i for i in range(sd[6].x0+sd[6].shared_indices['top'][3]['my_start'],    sd[6].x0+sd[6].shared_indices['top'][3]['my_end'])]        # top sd6
+
+rec_2x_half_y = []
+rec_2x_half_y += [sd[0].y0-1 for i in range(sd[0].shared_indices['bottom'][2]['my_start'], sd[0].shared_indices['bottom'][2]['my_end'])]     # bottom sd0 part 1
+rec_2x_half_y += [sd[0].y0-1 for i in range(sd[0].shared_indices['bottom'][3]['my_start'], sd[0].shared_indices['bottom'][3]['my_end'])]     # bottom sd0 part 2
+rec_2x_half_y += [sd[4].y3+1 for i in range(sd[4].shared_indices['top'][2]['my_start'],    sd[4].shared_indices['top'][2]['my_end'])]        # top sd4
+rec_2x_half_y += [sd[6].y3+1 for i in range(sd[6].shared_indices['top'][3]['my_start'],    sd[6].shared_indices['top'][3]['my_end'])]        # top sd6
+
+# ------------------------------------------------------------------------------- 2 to 1
+rec_2x_1_x  = []
+rec_2x_1_x += [i for i in range(sd[1].x0+sd[1].shared_indices['bottom'][3]['my_start'], sd[1].x0+sd[1].shared_indices['bottom'][3]['my_end'])]        # bottom sd1
+rec_2x_1_x += [i for i in range(sd[5].x0+sd[5].shared_indices['top'][2]['my_start'],    sd[5].x0+sd[5].shared_indices['top'][2]['my_end'])]           # top sd5
+
+rec_2x_1_y = []
+rec_2x_1_y += [sd[1].y0-1 for i in range(sd[1].shared_indices['bottom'][3]['my_start'], sd[1].shared_indices['bottom'][3]['my_end'])]        # bottom sd1
+rec_2x_1_y += [sd[5].y3+1 for i in range(sd[5].shared_indices['top'][2]['my_start'],    sd[5].shared_indices['top'][2]['my_end'])]           # top sd5
+
+# ------------------------------------------------------------------------------- 2 to 2
+rec_2x_2_x = []
+rec_2x_2_x += [sd[2].x1-1 for i in range(sd[2].shared_indices['right'][3]['my_start'], sd[2].shared_indices['right'][3]['my_end'])]          # right sd2
+rec_2x_2_x += [sd[3].x0+1 for i in range(sd[3].shared_indices['left'][2]['my_start'],  sd[3].shared_indices['left'][2]['my_end'])]           # left sd3
+
+rec_2x_2_y  = []
+rec_2x_2_y += [i for i in range(sd[2].y3, sd[2].y0)]          # right sd2
+rec_2x_2_y += [i for i in range(sd[3].y3, sd[3].y0)]          # left sd3
+
+# ------------------------------------------------------------------------------- 1 to 0.5
+rec_1x_half_x  = []
+rec_1x_half_x += [sd[0].x1-1 for i in range(sd[0].shared_indices['right'][1]['my_start'], sd[0].shared_indices['right'][1]['my_end'])]       # right sd0
+rec_1x_half_x += [sd[4].x1-1 for i in range(sd[4].shared_indices['right'][5]['my_start'], sd[4].shared_indices['right'][5]['my_end'])]       # right sd4
+rec_1x_half_x += [sd[6].x0+1 for i in range(sd[6].shared_indices['left'][5]['my_start'],  sd[6].shared_indices['left'][5]['my_end'])]        # left sd6
+
+rec_1x_half_y  = []
+rec_1x_half_y += [i for i in range(sd[0].y3, sd[0].y0)]       # right sd0
+rec_1x_half_y += [i for i in range(sd[4].y3, sd[4].y0)]       # right sd4
+rec_1x_half_y += [i for i in range(sd[6].y3, sd[6].y0)]       # left sd6
+
+# ------------------------------------------------------------------------------- 1 to 1
+# ------------------------------------------------------------------------------- 1 to 2
+rec_1x_2_x  = []
+rec_1x_2_x += [i for i in range(sd[3].x0+sd[3].shared_indices['top'][1]['my_start'], sd[3].x0+sd[3].shared_indices['top'][1]['my_end'])]           # top sd3
+rec_1x_2_x += [i for i in range(sd[2].x0+sd[2].shared_indices['bottom'][5]['my_start'], sd[2].x0+sd[2].shared_indices['bottom'][5]['my_end'])]     # bottom sd2
+rec_1x_2_x += [i for i in range(sd[3].shared_indices['bottom'][5]['my_start'], sd[3].shared_indices['bottom'][5]['my_end'])]                       # bottom sd3
+
+rec_1x_2_y  = []
+rec_1x_2_y += [sd[3].y3+1 for i in range(sd[3].x0+sd[3].shared_indices['top'][1]['my_start'], sd[3].x0+sd[3].shared_indices['top'][1]['my_end'])]  # top sd3
+rec_1x_2_y += [sd[2].y0-1 for i in range(sd[2].shared_indices['bottom'][5]['my_start'], sd[2].shared_indices['bottom'][5]['my_end'])]              # bottom sd2
+rec_1x_2_y += [sd[3].y0-1 for i in range(sd[3].shared_indices['bottom'][5]['my_start'], sd[3].shared_indices['bottom'][5]['my_end'])]              # bottom sd3
+
+# ------------------------------------------------------------------------------- 0.5 to 0.5
+# ------------------------------------------------------------------------------- 0.5 to 1
+rec_half_1_x  = []
+rec_half_1_x += [sd[1].x0+1 for i in range(sd[1].shared_indices['left'][0]['my_start'],  sd[1].shared_indices['left'][0]['my_end'])]       # left sd1
+rec_half_1_x += [sd[5].x0+1 for i in range(sd[5].shared_indices['left'][4]['my_start'],  sd[5].shared_indices['left'][4]['my_end'])]       # left sd5
+rec_half_1_x += [sd[5].x1-1 for i in range(sd[5].shared_indices['right'][6]['my_start'], sd[5].shared_indices['right'][6]['my_end'])]      # right sd5
+
+rec_half_1_y  = []
+rec_half_1_y += [ i for i in range(sd[1].y3, sd[1].y0)]       # left sd1
+rec_half_1_y += [ i for i in range(sd[5].y3, sd[5].y0)]       # left sd5
+rec_half_1_y += [ i for i in range(sd[5].y3, sd[5].y0)]       # right sd5
+
+# ------------------------------------------------------------------------------- 0.5 to 2
+rec_half_2_x  = []
+rec_half_2_x += [i for i in range(sd[2].x0+sd[2].shared_indices['top'][0]['my_start'],    sd[2].x0+sd[2].shared_indices['top'][0]['my_end'])]        # top sd2
+rec_half_2_x += [i for i in range(sd[3].x0+sd[3].shared_indices['top'][0]['my_start'],    sd[3].x0+sd[3].shared_indices['top'][0]['my_end'])]        # top sd3
+rec_half_2_x += [i for i in range(sd[2].x0+sd[2].shared_indices['bottom'][4]['my_start'], sd[2].x0+sd[2].shared_indices['bottom'][4]['my_end'])]     # bottom sd2
+rec_half_2_x += [i for i in range(sd[3].x0+sd[3].shared_indices['bottom'][6]['my_start'], sd[3].x0+sd[3].shared_indices['bottom'][6]['my_end'])]     # bottom sd3
+
+rec_half_2_y  = []
+rec_half_2_y += [sd[2].y3+1 for i in range(sd[2].x0+sd[2].shared_indices['top'][0]['my_start'],    sd[2].x0+sd[2].shared_indices['top'][0]['my_end'])]        # top sd2
+rec_half_2_y += [sd[3].y3+1 for i in range(sd[3].x0+sd[3].shared_indices['top'][0]['my_start'],    sd[3].x0+sd[3].shared_indices['top'][0]['my_end'])]        # top sd3
+rec_half_2_y += [sd[2].y0-1 for i in range(sd[2].x0+sd[2].shared_indices['bottom'][4]['my_start'], sd[2].x0+sd[2].shared_indices['bottom'][4]['my_end'])]     # bottom sd2
+rec_half_2_y += [sd[3].y0-1 for i in range(sd[3].x0+sd[3].shared_indices['bottom'][6]['my_start'], sd[3].x0+sd[3].shared_indices['bottom'][6]['my_end'])]     # bottom sd3
+
+
+src_2x_half_x = torch.tensor(src_2x_half_x).to(device)
+src_2x_1_x    = torch.tensor(src_2x_1_x).to(device)
+src_2x_2_x    = torch.tensor(src_2x_2_x).to(device)
+src_1x_half_x = torch.tensor(src_1x_half_x).to(device)
+src_1x_2_x    = torch.tensor(src_1x_2_x).to(device)
+src_half_1_x  = torch.tensor(src_half_1_x).to(device)
+src_half_2_x  = torch.tensor(src_half_2_x).to(device)
+
+src_2x_half_y = torch.tensor(src_2x_half_y).to(device)
+src_2x_1_y    = torch.tensor(src_2x_1_y).to(device)
+src_2x_2_y    = torch.tensor(src_2x_2_y).to(device)
+src_1x_half_y = torch.tensor(src_1x_half_y).to(device)
+src_1x_2_y    = torch.tensor(src_1x_2_y).to(device)
+src_half_1_y  = torch.tensor(src_half_1_y).to(device)
+src_half_2_y  = torch.tensor(src_half_2_y).to(device)
+
+rec_2x_half_x = torch.tensor(rec_2x_half_x).to(device)
+rec_2x_1_x    = torch.tensor(rec_2x_1_x).to(device)
+rec_2x_2_x    = torch.tensor(rec_2x_2_x).to(device)
+rec_1x_half_x = torch.tensor(rec_1x_half_x).to(device)
+rec_1x_2_x    = torch.tensor(rec_1x_2_x).to(device)
+rec_half_1_x  = torch.tensor(rec_half_1_x).to(device)
+rec_half_2_x  = torch.tensor(rec_half_2_x).to(device)
+
+rec_2x_half_y = torch.tensor(rec_2x_half_y).to(device)
+rec_2x_1_y    = torch.tensor(rec_2x_1_y).to(device)
+rec_2x_2_y    = torch.tensor(rec_2x_2_y).to(device)
+rec_1x_half_y = torch.tensor(rec_1x_half_y).to(device)
+rec_1x_2_y    = torch.tensor(rec_1x_2_y).to(device)
+rec_half_1_y  = torch.tensor(rec_half_1_y).to(device)
+rec_half_2_y  = torch.tensor(rec_half_2_y).to(device)
+
+
+''' Physical boundary indices'''
+# ------------------------------------------------------------------------------- bottom
+bottom_x = []
+bottom_x += [i for i in range(sd[4].x0, sd[4].x1)]
+bottom_x += [i for i in range(sd[5].x0, sd[5].x1)]
+bottom_x += [i for i in range(sd[6].x0, sd[6].x1)]
+
+bottom_y = []
+bottom_y += [sd[4].y0 for _ in range(sd[4].x0, sd[4].x1)]
+bottom_y += [sd[5].y0 for _ in range(sd[5].x0, sd[5].x1)]
+bottom_y += [sd[6].y0 for _ in range(sd[6].x0, sd[6].x1)]
+
+# ------------------------------------------------------------------------------- left
+left_x = []
+left_x += [sd[0].x0 for _ in range(sd[0].y3, sd[0].y0)]
+left_x += [sd[2].x0 for _ in range(sd[2].y3, sd[2].y0)]
+left_x += [sd[4].x0 for _ in range(sd[4].y3, sd[4].y0)]
+
+left_y = []
+left_y += [i for i in range(sd[0].y3, sd[0].y0)]
+left_y += [i for i in range(sd[2].y3, sd[2].y0)]
+left_y += [i for i in range(sd[4].y3, sd[4].y0)]
+
+# ------------------------------------------------------------------------------- right
+right_x = []
+right_x += [sd[1].x1-1 for _ in range(sd[1].y3, sd[1].y0)]
+right_x += [sd[3].x1-1 for _ in range(sd[3].y3, sd[3].y0)]
+right_x += [sd[6].x1-1 for _ in range(sd[6].y3, sd[6].y0)]
+
+right_y = []
+right_y += [i for i in range(sd[1].y3, sd[1].y0)]
+right_y += [i for i in range(sd[3].y3, sd[3].y0)]
+right_y += [i for i in range(sd[6].y3, sd[6].y0)]
+
+# ------------------------------------------------------------------------------- top
+top_x  = []
+top_x += [i for i in range(sd[0].x0, sd[0].x1)]
+top_x += [i for i in range(sd[1].x0, sd[1].x1)]
+
+top_y = []
+top_y += [sd[0].y3-1 for _ in range(sd[0].x0, sd[0].x1)]
+top_y += [sd[1].y3-1 for _ in range(sd[1].x0, sd[1].x1)]
+
+
+bottom_x = torch.tensor(bottom_x).to(device)
+bottom_y = torch.tensor(bottom_y).to(device)
+left_x   = torch.tensor(left_x).to(device)
+left_y   = torch.tensor(left_y).to(device)
+right_x  = torch.tensor(right_x).to(device)
+right_y  = torch.tensor(right_y).to(device)
+top_x    = torch.tensor(top_x).to(device)
+top_y    = torch.tensor(top_y).to(device)
+
+
+values_u = torch.zeros(input_shape, device=device)
+values_v = torch.zeros(input_shape, device=device)
+values_h = torch.zeros(input_shape, device=device)
+source_h = torch.zeros(input_shape, device=device)
+eta1 = torch.zeros(input_shape, device=device)
+eta2 = torch.zeros(input_shape, device=device)
+values_hh = torch.zeros(input_shape, device=device)
+dif_values_h = torch.zeros(input_shape, device=device)
+values_h_old = torch.zeros(input_shape, device=device)
+sigma_q = torch.zeros(input_shape, device=device)
+k_u = torch.zeros(input_shape, device=device)
+k_v = torch.zeros(input_shape, device=device)
+k_x = torch.zeros(input_shape, device=device)
+k_y = torch.zeros(input_shape, device=device)
+b = torch.zeros(input_shape, device=device)
+
+input_shape_pd = (1,1,global_ny+2, global_nx+2)
+values_uu = torch.zeros(input_shape_pd, device=device)
+values_vv = torch.zeros(input_shape_pd, device=device)
+eta1_p = torch.zeros(input_shape_pd, device=device)
+dif_values_hh = torch.zeros(input_shape_pd, device=device)
+values_hhp = torch.zeros(input_shape_pd, device=device)
+values_hp = torch.zeros(input_shape_pd, device=device)
+k_uu = torch.zeros(input_shape_pd, device=device)
+k_vv = torch.zeros(input_shape_pd, device=device)
+# stablisation factor
+k1 = torch.ones(input_shape, device=device)*epsilon_eta
+k2 = torch.zeros(input_shape, device=device)    
+k3 = torch.ones((global_ny, global_nx), device=device)*10**2*0.5/dt # for transient problem
+
+
+values_h[0,0,:,:] = values_H[0,0,:,:]
+values_H[0,0,:,:] = -values_H[0,0,:,:]
+
+# # # ################################### # # #
+# # # ######    Linear Filter      ###### # # #
+# # # ################################### # # #
+dx=4.0
+bias_initializer = torch.tensor([0.0], device=device)
+
+w1 = torch.tensor([[[[1/3/dx**2], [1/3/dx**2] , [1/3/dx**2]],
+                    [[1/3/dx**2], [-8/3/dx**2], [1/3/dx**2]],
+                    [[1/3/dx**2], [1/3/dx**2] , [1/3/dx**2]]]], device=device)
+
+w2 = torch.tensor([[[[1/(12*dx)], [0.0], [-1/(12*dx)]],
+                    [[1/(3*dx)] , [0.0], [-1/(3*dx)]] ,
+                    [[1/(12*dx)], [0.0], [-1/(12*dx)]]]], device=device)
+
+w3 = torch.tensor([[[[-1/(12*dx)], [-1/(3*dx)], [-1/(12*dx)]],
+                    [[0.0]       , [0.0]      , [0.0]]       ,
+                    [[1/(12*dx)] , [1/(3*dx)] , [1/(12*dx)]]]], device=device)
+
+wm = torch.tensor([[[[0.028], [0.11] , [0.028]],
+                    [[0.11] ,  [0.44], [0.11]],
+                    [[0.028], [0.11] , [0.028]]]], device=device)
+
+
+w1 = torch.reshape(w1,(1,1,3,3))
+w2 = torch.reshape(w2,(1,1,3,3))
+w3 = torch.reshape(w3,(1,1,3,3))
+wm = torch.reshape(wm,(1,1,3,3))
+
+g_x = 0;g_y = 0;g_z = 9.81  # Gravity acceleration (m/s2) 
+rho = 1/g_z                 # Resulting density
+diag = -w1[0,0,1,1]
+
+
+dy = torch.tensor(dy).to(device)
+x =  torch.tensor(x).to(device)
+y =  torch.tensor(y).to(device)
+
+havedef average_4_consecutive_pairs(tensor):
+    length = tensor.size(0)
+    
+    if length % 4 != 0:
+        raise ValueError('Length of the array must be divisible by 4')
+    
+    quads = tensor.view(-1, 4)  # Reshape into groups of 4
+    averaged = quads.mean(dim=1)
+    return averaged
+
+
+def average_2_consecutive_pairs(tensor):
+    length = tensor.size(0)
+    # If the tensor has odd length, drop the last element
+    if length % 2 != 0:
+        raise ValueError('Length of the array must be even')
+    
+    paired = tensor.view(-1, 2)   # Reshape to pairs and compute the mean across dimension 1
+    averaged = paired.mean(dim=1)
+    return averaged
+
+ 
+def repeat_each_element_twice(tensor):
+    if tensor.dim() != 1:
+        raise ValueError("Input must be a 1D tensor.")
+    
+    repeated = tensor.repeat_interleave(2)
+    return repeated
+
+
+
+def repeat_each_element_four_times(tensor):
+    if tensor.dim() != 1:
+        raise ValueError("Input must be a 1D tensor.")
+    
+    repeated = tensor.repeat_interleave(4)
+    return repeated
+
+
+
+def update_halos_single(tensor, src_2x_half_x=src_2x_half_x, src_2x_half_y=src_2x_half_y,
+                 rec_2x_half_x=rec_2x_half_x, rec_2x_half_y=rec_2x_half_y,
+                         src_2x_1_x=src_2x_1_x, src_2x_1_y=src_2x_1_y,
+                 rec_2x_1_x=rec_2x_1_x, rec_2x_1_y=rec_2x_1_y,
+                         src_2x_2_x=src_2x_2_x, src_2x_2_y=src_2x_2_y,
+                 rec_2x_2_x=rec_2x_2_x, rec_2x_2_y=rec_2x_2_y,
+                         src_1x_half_x=src_1x_half_x, src_1x_half_y=src_1x_half_y,
+                 rec_1x_half_x=rec_1x_half_x, rec_1x_half_y=rec_1x_half_y,
+                         src_1x_2_x=src_1x_2_x, src_1x_2_y=src_1x_2_y,
+                 rec_1x_2_x=rec_1x_2_x, rec_1x_2_y=rec_1x_2_y,
+                         src_half_1_x=src_half_1_x, src_half_1_y=src_half_1_y,
+                 rec_half_1_x=rec_half_1_x, rec_half_1_y=rec_half_1_y,
+                         src_half_2_x=src_half_2_x, src_half_2_y=src_half_2_y,
+                 rec_half_2_x=rec_half_2_x, rec_half_2_y=rec_half_2_y):
+    
+    tensor[0,0,rec_2x_half_y, rec_2x_half_x] = average_4_consecutive_pairs(tensor[0,0,    src_2x_half_y, src_2x_half_x])
+    tensor[0,0,rec_2x_1_y   , rec_2x_1_x]    = average_2_consecutive_pairs(tensor[0,0,    src_2x_1_y,    src_2x_1_x])
+    tensor[0,0,rec_2x_2_y   , rec_2x_2_x]    = tensor[0,0,                                src_2x_2_y,    src_2x_2_x]
+    tensor[0,0,rec_1x_half_y, rec_1x_half_x] = average_2_consecutive_pairs(tensor[0,0,    src_1x_half_y, src_1x_half_x])
+    tensor[0,0,rec_1x_2_y   , rec_1x_2_x]    = repeat_each_element_twice(tensor[0,0,      src_1x_2_y,    src_1x_2_x])
+    tensor[0,0,rec_half_1_y , rec_half_1_x]  = repeat_each_element_twice(tensor[0,0,      src_half_1_y,  src_half_1_x])
+    tensor[0,0,rec_half_2_y , rec_half_2_x]  = repeat_each_element_four_times(tensor[0,0, src_half_2_y,  src_half_2_x])
+    
+def update_physical_boundary(tensor, bottom_x=bottom_x, bottom_y=bottom_y, left_x=left_x, left_y=left_y, right_x=right_x, right_y=right_y, top_x=top_x, top_y=top_y):
+    tensor[0,0,bottom_y, bottom_x].fill_(0.0)
+    tensor[0,0,left_y, left_x].fill_(0.0)
+    tensor[0,0,right_y, right_x].fill_(0.0)
+    tensor[0,0,top_y, top_x].fill_(0.0)
+    
+    
+def update_halos(tensor_list, all_tensors=True):
+    # update internal boundaries
+    for i in tensor_list:
+        update_halos_single(i)
+    
+    if all_tensors == True:
+        # update physical boundaries
+        for i in tensor_list[2:]:
+            update_physical_boundary(i)
+
+        dum_x = [i.item()+1 for i in left_x]
+        tensor_list[0][0,0,left_y, dum_x].fill_(0.0)                               # values_u
+        tensor_list[1][0,0,left_y, dum_x] = tensor_list[1][0,0,left_y, left_x]     # values_v
+
+        dum_x = [i.item()-1 for i in right_x]
+        tensor_list[0][0,0,right_y, dum_x] = tensor_list[0][0,0,right_y, right_x]  # values_u
+        tensor_list[1][0,0,right_y, dum_x].fill_(0.0)                              # values_v
         
-    for i, s_idx in enumerate(source_3_sd_idx):
-        sd[s_idx].source_h[0,0,y_upstream3[i]-4,x_upstream3[i]]     = ((rate3[indx+1] - rate3[indx])/900 * (time%900) + rate3[indx])/(4**(source3_ratio[i]-1))
-        
-#     sd[3].source_h[0,0,:,1] = rate2[index]
-#     sd[1].source_h[0,0,:,1] = rate2[index]
-
-for ele in range(no_domains):
-    sd[ele].values_H = -sd[ele].values_H                
-
+    else: # for k_uu and k_vv only
+        for i in tensor_list:
+            update_physical_boundary(i)
 
 # # # ################################### # # #
 # # # #########   AI4SWE MAIN ########### # # #
@@ -351,563 +708,182 @@ class AI4SWE(nn.Module):
     """docstring for two_step"""
     def __init__(self):
         super(AI4SWE, self).__init__()
-        self.cmm = nn.Conv2d(1, 1, kernel_size=3, stride=1, padding=0)
-        self.cmm.weight.data = wm
-        
-        self.diff = nn.Conv2d(1, 1, kernel_size=3, stride=1, padding=0)
         self.xadv = nn.Conv2d(1, 1, kernel_size=3, stride=1, padding=0)
         self.yadv = nn.Conv2d(1, 1, kernel_size=3, stride=1, padding=0)
+        self.diff = nn.Conv2d(1, 1, kernel_size=3, stride=1, padding=0)
+        self.cmm = nn.Conv2d(1, 1, kernel_size=3, stride=1, padding=0)
 
-        self.diff.weight.data = w1 / dx[0]**2
-        self.xadv.weight.data = w2 / dx[0]
-        self.yadv.weight.data = w3 / dx[0]
+        self.diff.weight.data = w1
+        self.xadv.weight.data = w2
+        self.yadv.weight.data = w3
+        self.cmm.weight.data = wm
 
-        self.diag = -w1[0, 0, 1, 1].item() / (dx[0])**2
-            
         self.diff.bias.data = bias_initializer
         self.xadv.bias.data = bias_initializer
         self.yadv.bias.data = bias_initializer
         self.cmm.bias.data = bias_initializer
 
+    def boundary_condition_u(self, values_u, values_uu):
+#         update_halos_single(values_u)
+        values_uu[0,0,1:-1,1:-1] = values_u[0,0,:,:]
+        values_uu[0,0,:,0].fill_(0) 
+        values_uu[0,0,:,-1].fill_(0)
+        values_uu[0,0,0,:] = values_uu[0,0,1,:] 
+        values_uu[0,0,-1,:] = values_uu[0,0,-2,:]
+        return values_uu   
 
-    def scale_it(self, val1, val2):
-        '''
-        val1 :: info comming from
-        val2 :: info going to
-        ratio = val1/val2 size
-        '''
-        size_val2 = val2.size(0)
-        ratio = val1.size(0) / size_val2
-
-        if ratio == 1.0:
-            return val1
-        elif ratio == 0.5:
-            # Use repeat_interleave to increase the size of val1 to match the size of val2
-            repeat_factor = size_val2 // val1.size(0)
-            val2 = val1.repeat_interleave(repeat_factor)
-            return val2
-        elif ratio == 2:
-            # Calculate the number of elements in each group
-            group_size = val1.size(0) // size_val2
-            # Reshape val1 into a 2D tensor with size_val2 rows
-            val1_reshaped = val1.view(size_val2, -1)
-            # Calculate the mean of each row
-            val2 = val1_reshaped.mean(dim=1)
-            return val2
-        elif ratio == 0.25:
-            # Repeat each element of val1 4 times
-            val2 = val1.repeat_interleave(4)
-            return val2
-        elif ratio == 4:
-            # Reshape val1 into a 2D tensor with size_val2 rows and 4 columns
-            val1_reshaped = val1.view(size_val2, -1)
-            # Calculate the mean of each row
-            val2 = val1_reshaped.mean(dim=1)
-            return val2
-
-
-        
-    def update_halos(self, sd):  # AMIN:: to optimise pass in as local vbls instead of global
-        for ele in range(no_domains):
-            for key, val in sd[ele].neig.items():
-                for i in val:
-                    if not isinstance(i, str):
-                        my_x1 = sd[ele].shared_indices[key][i]['my_start']
-                        my_x2 = sd[ele].shared_indices[key][i]['my_end']
-                        neig_x1 =  sd[ele].shared_indices[key][i]['neig_start']
-                        neig_x2 =  sd[ele].shared_indices[key][i]['neig_end']
-
-                        if key == 'bottom':
-                            sd[ele].halo_u[0][my_x1:my_x2]     = self.scale_it(sd[i].values_u[0,0,0              , neig_x1:neig_x2], sd[ele].halo_u[0][my_x1:my_x2])
-                            sd[ele].halo_v[0][my_x1:my_x2]     = self.scale_it(sd[i].values_v[0,0,0              , neig_x1:neig_x2], sd[ele].halo_v[0][my_x1:my_x2])
-                            sd[ele].halo_b_u[0][my_x1:my_x2]   = self.scale_it(sd[i].b_u[0,0,0                   , neig_x1:neig_x2], sd[ele].halo_b_u[0][my_x1:my_x2])
-                            sd[ele].halo_b_v[0][my_x1:my_x2]   = self.scale_it(sd[i].b_v[0,0,0                   , neig_x1:neig_x2], sd[ele].halo_b_v[0][my_x1:my_x2])
-                            sd[ele].halo_h[0][my_x1:my_x2]     = self.scale_it(sd[i].values_h[0,0,0              , neig_x1:neig_x2], sd[ele].halo_h[0][my_x1:my_x2])
-                            sd[ele].halo_hh[0][my_x1:my_x2]    = self.scale_it(sd[i].values_hh[0,0,0             , neig_x1:neig_x2], sd[ele].halo_hh[0][my_x1:my_x2])
-                            sd[ele].halo_dif_h[0][my_x1:my_x2] = self.scale_it(sd[i].dif_values_h[0,0,0          , neig_x1:neig_x2], sd[ele].halo_dif_h[0][my_x1:my_x2])
-                            sd[ele].halo_eta[0][my_x1:my_x2]   = self.scale_it((sd[i].values_h+sd[i].values_H)[0,0,0, neig_x1:neig_x2], sd[ele].halo_eta[0][my_x1:my_x2])
-                            sd[ele].halo_eta1[0][my_x1:my_x2]  = self.scale_it(sd[i].eta1[0,0,0, neig_x1:neig_x2], sd[ele].halo_eta1[0][my_x1:my_x2])
-                            sd[ele].halo_k_uu[0][my_x1:my_x2]  = self.scale_it(torch.minimum(sd[i].k_u[0,0,0,neig_x1:neig_x2]  , sd[i].k3[0,neig_x1:neig_x2]), sd[ele].halo_k_uu[0][my_x1:my_x2])
-                            sd[ele].halo_k_vv[0][my_x1:my_x2]  = self.scale_it(torch.minimum(sd[i].k_v[0,0,0,neig_x1:neig_x2]  , sd[i].k3[0,neig_x1:neig_x2]), sd[ele].halo_k_vv[0][my_x1:my_x2])
-                        if key == 'left':
-                            sd[ele].halo_u[1][my_x1:my_x2]     = self.scale_it(sd[i].values_u[0,0                , neig_x1:neig_x2, -1], sd[ele].halo_u[1][my_x1:my_x2])
-                            sd[ele].halo_v[1][my_x1:my_x2]     = self.scale_it(sd[i].values_v[0,0                , neig_x1:neig_x2, -1], sd[ele].halo_v[1][my_x1:my_x2])
-                            sd[ele].halo_b_u[1][my_x1:my_x2]   = self.scale_it(sd[i].b_u[0,0                     , neig_x1:neig_x2, -1], sd[ele].halo_b_u[1][my_x1:my_x2])
-                            sd[ele].halo_b_v[1][my_x1:my_x2]   = self.scale_it(sd[i].b_v[0,0                     , neig_x1:neig_x2, -1], sd[ele].halo_b_v[1][my_x1:my_x2])
-                            sd[ele].halo_h[1][my_x1:my_x2]     = self.scale_it(sd[i].values_h[0,0                , neig_x1:neig_x2, -1], sd[ele].halo_h[1][my_x1:my_x2])
-                            sd[ele].halo_hh[1][my_x1:my_x2]    = self.scale_it(sd[i].values_hh[0,0               , neig_x1:neig_x2, -1], sd[ele].halo_hh[1][my_x1:my_x2])
-                            sd[ele].halo_dif_h[1][my_x1:my_x2] = self.scale_it(sd[i].dif_values_h[0,0            , neig_x1:neig_x2, -1], sd[ele].halo_dif_h[1][my_x1:my_x2])
-                            sd[ele].halo_eta[1][my_x1:my_x2]   = self.scale_it((sd[i].values_h+sd[i].values_H)[0,0, neig_x1:neig_x2,-1], sd[ele].halo_eta[1][my_x1:my_x2])
-                            sd[ele].halo_eta1[1][my_x1:my_x2]  = self.scale_it(sd[i].eta1[0,0                    , neig_x1:neig_x2, -1], sd[ele].halo_eta1[1][my_x1:my_x2])
-                            sd[ele].halo_k_uu[1][my_x1:my_x2]  = self.scale_it(torch.minimum(sd[i].k_u[0,0,neig_x1:neig_x2,-1] , sd[i].k3[neig_x1:neig_x2,-1]), sd[ele].halo_k_uu[1][my_x1:my_x2])
-                            sd[ele].halo_k_vv[1][my_x1:my_x2]  = self.scale_it(torch.minimum(sd[i].k_v[0,0,neig_x1:neig_x2,-1] , sd[i].k3[neig_x1:neig_x2,-1]), sd[ele].halo_k_vv[1][my_x1:my_x2])
-                        if key == 'right':
-                            sd[ele].halo_u[2][my_x1:my_x2]     = self.scale_it(sd[i].values_u[0,0                , neig_x1:neig_x2, 0], sd[ele].halo_u[2][my_x1:my_x2])
-                            sd[ele].halo_v[2][my_x1:my_x2]     = self.scale_it(sd[i].values_v[0,0                , neig_x1:neig_x2, 0], sd[ele].halo_v[2][my_x1:my_x2])
-                            sd[ele].halo_b_u[2][my_x1:my_x2]   = self.scale_it(sd[i].b_u[0,0                     , neig_x1:neig_x2, 0], sd[ele].halo_b_u[2][my_x1:my_x2])
-                            sd[ele].halo_b_v[2][my_x1:my_x2]   = self.scale_it(sd[i].b_v[0,0                     , neig_x1:neig_x2, 0], sd[ele].halo_b_v[2][my_x1:my_x2])
-                            sd[ele].halo_h[2][my_x1:my_x2]     = self.scale_it(sd[i].values_h[0,0                , neig_x1:neig_x2, 0], sd[ele].halo_h[2][my_x1:my_x2])
-                            sd[ele].halo_hh[2][my_x1:my_x2]    = self.scale_it(sd[i].values_hh[0,0               , neig_x1:neig_x2, 0], sd[ele].halo_hh[2][my_x1:my_x2])
-                            sd[ele].halo_dif_h[2][my_x1:my_x2] = self.scale_it(sd[i].dif_values_h[0,0            , neig_x1:neig_x2, 0], sd[ele].halo_dif_h[2][my_x1:my_x2])
-                            sd[ele].halo_eta[2][my_x1:my_x2]   = self.scale_it((sd[i].values_h+sd[i].values_H)[0,0, neig_x1:neig_x2,0], sd[ele].halo_eta[2][my_x1:my_x2])
-                            sd[ele].halo_eta1[2][my_x1:my_x2]  = self.scale_it(sd[i].eta1[0,0                    , neig_x1:neig_x2, 0], sd[ele].halo_eta1[2][my_x1:my_x2])
-                            sd[ele].halo_k_uu[2][my_x1:my_x2]  = self.scale_it(torch.minimum(sd[i].k_u[0,0,neig_x1:neig_x2,0]  , sd[i].k3[neig_x1:neig_x2,0]), sd[ele].halo_k_uu[2][my_x1:my_x2])
-                            sd[ele].halo_k_vv[2][my_x1:my_x2]  = self.scale_it(torch.minimum(sd[i].k_v[0,0,neig_x1:neig_x2,0]  , sd[i].k3[neig_x1:neig_x2,0]), sd[ele].halo_k_vv[2][my_x1:my_x2])
-                        if key == 'top':
-                            sd[ele].halo_u[3][my_x1:my_x2]     = self.scale_it(sd[i].values_u[0,0,-1             , neig_x1:neig_x2], sd[ele].halo_u[3][my_x1:my_x2])
-                            sd[ele].halo_v[3][my_x1:my_x2]     = self.scale_it(sd[i].values_v[0,0,-1             , neig_x1:neig_x2], sd[ele].halo_v[3][my_x1:my_x2])
-                            sd[ele].halo_b_u[3][my_x1:my_x2]   = self.scale_it(sd[i].b_u[0,0,-1                  , neig_x1:neig_x2], sd[ele].halo_b_u[3][my_x1:my_x2])
-                            sd[ele].halo_b_v[3][my_x1:my_x2]   = self.scale_it(sd[i].b_v[0,0,-1                  , neig_x1:neig_x2], sd[ele].halo_b_v[3][my_x1:my_x2])
-                            sd[ele].halo_h[3][my_x1:my_x2]     = self.scale_it(sd[i].values_h[0,0,-1             , neig_x1:neig_x2], sd[ele].halo_h[3][my_x1:my_x2])
-                            sd[ele].halo_hh[3][my_x1:my_x2]    = self.scale_it(sd[i].values_hh[0,0,-1            , neig_x1:neig_x2], sd[ele].halo_hh[3][my_x1:my_x2])
-                            sd[ele].halo_dif_h[3][my_x1:my_x2] = self.scale_it(sd[i].dif_values_h[0,0,-1         , neig_x1:neig_x2], sd[ele].halo_dif_h[3][my_x1:my_x2])
-                            sd[ele].halo_eta[3][my_x1:my_x2]   = self.scale_it((sd[i].values_h+sd[i].values_H)[0,0,-1, neig_x1:neig_x2], sd[ele].halo_eta[3][my_x1:my_x2])
-                            sd[ele].halo_eta1[3][my_x1:my_x2]  = self.scale_it(sd[i].eta1[0,0,-1, neig_x1:neig_x2], sd[ele].halo_eta1[3][my_x1:my_x2])
-                            sd[ele].halo_k_uu[3][my_x1:my_x2]  = self.scale_it(torch.minimum(sd[i].k_u[0,0,-1,neig_x1:neig_x2] , sd[i].k3[-1,neig_x1:neig_x2]), sd[ele].halo_k_uu[3][my_x1:my_x2])
-                            sd[ele].halo_k_vv[3][my_x1:my_x2]  = self.scale_it(torch.minimum(sd[i].k_v[0,0,-1,neig_x1:neig_x2] , sd[i].k3[-1,neig_x1:neig_x2]), sd[ele].halo_k_vv[3][my_x1:my_x2])
-        return
-                
-            
-        
-    def boundary_condition_u(self, values_u, values_uu, sd):
-        values_uu[0,0,1:-1,1:-1] = values_u[0,0, :, :]
-        # -------------------------------------------------------------------------------- bottom
-        if isinstance(sd.neig['bottom'], int):
-            values_uu[0,0, -1, :] = values_uu[0,0, -2, :]
-        else:
-            values_uu[0,0, -1, 1:-1] = sd.halo_u[0]
-        # --------------------------------------------------------------------------------- left
-        if isinstance(sd.neig['left'], int):
-            values_uu[0,0,    :, 0].fill_(0) 
-        else:
-            values_uu[0,0, 1:-1, 0] = sd.halo_u[1]
-        # --------------------------------------------------------------------------------- right
-        if isinstance(sd.neig['right'], int):
-            values_uu[0,0,    :, -1].fill_(0)
-        else:
-            values_uu[0,0, 1:-1, -1] = sd.halo_u[2]
-        # --------------------------------------------------------------------------------- top
-        if isinstance(sd.neig['top'], int):
-            values_uu[0,0, 0, :] = values_uu[0,0, 1, :]
-        else:
-            values_uu[0,0, 0, 1:-1] = sd.halo_u[3]
-            
-        return
-
-
-    def boundary_condition_v(self, values_v, values_vv, sd):
+    def boundary_condition_v(self, values_v, values_vv):
+#         update_halos_single(values_v)
         values_vv[0,0,1:-1,1:-1] = values_v[0,0,:,:]
-        # -------------------------------------------------------------------------------- bottom
-        if isinstance(sd.neig['bottom'], int):
-            values_vv[0,0, -1,    :].fill_(0)
-        else:
-            values_vv[0,0, -1, 1:-1] = sd.halo_v[0]
-        # --------------------------------------------------------------------------------- left
-        if isinstance(sd.neig['left'], int):
-            values_vv[0,0,      :,   0] = values_vv[0,0, :, 1]
-        else:
-            values_vv[0,0,   1:-1,   0] = sd.halo_v[1]
-        # --------------------------------------------------------------------------------- right
-        if isinstance(sd.neig['right'], int):   
-            values_vv[0,0,      :, -1] = values_vv[0,0, :,-2] 
-        else:
-            values_vv[0,0,   1:-1, -1] = sd.halo_v[2]
-        # --------------------------------------------------------------------------------- top
-        if isinstance(sd.neig['top'], int):
-            values_vv[0,0, 0,    :].fill_(0)
-        else:
-            values_vv[0,0, 0, 1:-1] = sd.halo_v[3]
+        values_vv[0,0,:,0] =  values_vv[0,0,:,1]
+        values_vv[0,0,:,-1] = values_vv[0,0,:,-2]
+        values_vv[0,0,0,:].fill_(0)
+        values_vv[0,0,-1,:].fill_(0)
+        return values_vv       
 
-        return
-    
-    
-    def boundary_condition_b_u(self, b_u, b_uu, sd):
-        b_uu[0,0,1:-1,1:-1] = b_u[0,0, :, :]
-        # -------------------------------------------------------------------------------- bottom
-        if isinstance(sd.neig['bottom'], int):
-            b_uu[0,0, -1,    :] = b_uu[0,0,-2, :]
-        else:
-            b_uu[0,0, -1, 1:-1] = sd.halo_b_u[0]
-        # --------------------------------------------------------------------------------- left
-        if isinstance(sd.neig['left'], int):
-            b_uu[0,0,   :, 0].fill_(0)
-        else:
-            b_uu[0,0,1:-1, 0] = sd.halo_b_u[1]
-        # --------------------------------------------------------------------------------- right
-        if isinstance(sd.neig['right'], int):
-            b_uu[0,0,    :, -1].fill_(0) 
-        else:
-            b_uu[0,0, 1:-1, -1] = sd.halo_b_u[2]
-        # --------------------------------------------------------------------------------- top
-        if isinstance(sd.neig['top'], int):
-            b_uu[0,0, 0,    :] = b_uu[0,0, 1, :]
-        else:
-            b_uu[0,0, 0, 1:-1] = sd.halo_b_u[3]
-
-        return
-
-
-    def boundary_condition_b_v(self, b_v, b_vv, sd):
-        b_vv[0,0,1:-1,1:-1] = b_v[0,0,:,:]
-        # -------------------------------------------------------------------------------- bottom
-        if isinstance(sd.neig['bottom'], int):
-            b_vv[0,0, -1,    :].fill_(0)
-        else:
-            b_vv[0,0, -1, 1:-1] = sd.halo_b_v[0]
-        # --------------------------------------------------------------------------------- left
-        if isinstance(sd.neig['left'], int):
-            b_vv[0,0,      :,   0] = b_vv[0,0, :, 1]
-        else:
-            b_vv[0,0,   1:-1,   0] = sd.halo_b_v[1]
-        # --------------------------------------------------------------------------------- right
-        if isinstance(sd.neig['right'], int):   
-            b_vv[0,0,      :, -1] = b_vv[0,0, :,-2]
-        else:
-            b_vv[0,0,   1:-1, -1] = sd.halo_b_v[2]
-        # --------------------------------------------------------------------------------- top
-        if isinstance(sd.neig['top'], int):
-            b_vv[0,0, 0,    :].fill_(0)         # top
-        else:
-            b_vv[0,0, 0, 1:-1] = sd.halo_b_v[3]
-
-        return
-
-
-    def boundary_condition_h(self, values_h, values_hp, sd): # Amin:: delete nny etc instead use -1 # use tensor.add()
+    def boundary_condition_h(self, values_h, values_hp):
+#         update_halos_single(values_h)
         values_hp[0,0,1:-1,1:-1] = values_h[0,0,:,:]
-        # -------------------------------------------------------------------------------- bottom
-        if isinstance(sd.neig['bottom'], int):
-            values_hp[0,0,-1,:].fill_(0)
-        else:
-            values_hp[0,0,-1,1:-1] = sd.halo_h[0]
-        # --------------------------------------------------------------------------------- left
-        if isinstance(sd.neig['left'], int):
-            values_hp[0,0,   :,0].fill_(0)
-        else:
-            values_hp[0,0,1:-1,0] = sd.halo_h[1]
-        # --------------------------------------------------------------------------------- right
-        if isinstance(sd.neig['right'], int):
-            values_hp[0,0,   :,-1].fill_(0)
-        else:
-            values_hp[0,0,1:-1,-1] = sd.halo_h[2]
-        # --------------------------------------------------------------------------------- top
-        if isinstance(sd.neig['top'], int):
-            values_hp[0,0,0,    :].fill_(0)
-        else:
-            values_hp[0,0,0, 1:-1] = sd.halo_h[3]
-                
-        return values_hp
-        
+        values_hp[0,0,:,-1].fill_(0)     
+        values_hp[0,0,:,0].fill_(0)
+        values_hp[0,0,-1,:].fill_(0)  
+        values_hp[0,0,0,:].fill_(0)
+        return values_hp 
     
-    def boundary_condition_hh(self, values_hh, values_hhp, sd): # Amin:: delete nny etc instead use -1 # use tensor.add()
-        values_hhp[0,0,1:-1,1:-1] = (values_hh)[0,0,:,:]
-        # -------------------------------------------------------------------------------- bottom
-        if isinstance(sd.neig['bottom'], int):
-            values_hhp[0,0,-1,:].fill_(0)
-        else:
-            values_hhp[0,0,-1, 1:-1] = sd.halo_hh[0]
-        # --------------------------------------------------------------------------------- left
-        if isinstance(sd.neig['left'], int):
-            values_hhp[0,0,   :,0].fill_(0)
-        else:
-            values_hhp[0,0,1:-1,0] = sd.halo_hh[1]
-        # --------------------------------------------------------------------------------- right
-        if isinstance(sd.neig['right'], int): # on the physical boundary
-            values_hhp[0,0,   :,-1].fill_(0)
-        else:
-            values_hhp[0,0,1:-1,-1] = sd.halo_hh[2]
-        # --------------------------------------------------------------------------------- top
-        if isinstance(sd.neig['top'], int):
-            values_hhp[0,0,0,:].fill_(0)
-        else:
-            values_hhp[0,0,0,1:-1] = sd.halo_hh[3]
-            
-        return values_hhp
+    def boundary_condition_hh(self, values_hh, values_hhp):
+#         update_halos_single(values_hh)
+        values_hhp[0,0,1:-1,1:-1] = values_hh[0,0,:,:]
+        values_hhp[0,0,:,-1].fill_(0)     
+        values_hhp[0,0,:,0].fill_(0)
+        values_hhp[0,0,-1,:].fill_(0)  
+        values_hhp[0,0,0,:].fill_(0)
+        return values_hhp 
     
+    def boundary_condition_dif_h(self, dif_values_h, dif_values_hh):
+#         update_halos_single(dif_values_h)
+        dif_values_hh[0,0,1:-1,1:-1] = dif_values_h[0,0,:,:]
+        dif_values_hh[0,0,:,-1].fill_(0)     
+        dif_values_hh[0,0,:,0].fill_(0)
+        dif_values_hh[0,0,-1,:].fill_(0)  
+        dif_values_hh[0,0,0,:].fill_(0)
+        return dif_values_hh 
     
-    def boundary_condition_dif_h(self, dif_values_h, dif_values_hh, sd):
-        dif_values_hh[0,0,1:-1,1:-1] = (dif_values_h)[0,0,:,:]
-        # -------------------------------------------------------------------------------- bottom
-        if isinstance(sd.neig['bottom'], int):
-            dif_values_hh[0,0,-1,:].fill_(0)
-        else:
-            dif_values_hh[0,0,-1,1:-1] = sd.halo_dif_h[0]
-        # --------------------------------------------------------------------------------- left
-        if isinstance(sd.neig['left'], int):
-            dif_values_hh[0,0,   :,0].fill_(0)
-        else:
-            dif_values_hh[0,0,1:-1,0] = sd.halo_dif_h[1]
-        # --------------------------------------------------------------------------------- right
-        if isinstance(sd.neig['right'], int): # on the physical boundary
-            dif_values_hh[0,0,   :,-1].fill_(0)
-        else:
-            dif_values_hh[0,0,1:-1,-1] = sd.halo_dif_h[2]
-        # --------------------------------------------------------------------------------- top
-        if isinstance(sd.neig['top'], int):
-            dif_values_hh[0,0,0,:].fill_(0)
-        else:
-            dif_values_hh[0,0,0,1:-1] = sd.halo_dif_h[3]
-        
-            
-        return dif_values_hh
-                                                     
-        
-    def boundary_condition_eta(self, eta, values_hp, sd):
+    def boundary_condition_eta(self, eta, values_hp):
+#         update_halos_single(eta)
         values_hp[0,0,1:-1,1:-1] = eta[0,0,:,:]
-        # -------------------------------------------------------------------------------- bottom
-        if isinstance(sd.neig['bottom'], int):
-            values_hp[0,0,-1,    :].fill_(0)
-        else:
-            values_hp[0,0,-1, 1:-1] = sd.halo_eta[0]
-        # --------------------------------------------------------------------------------- left
-        if isinstance(sd.neig['left'], int):
-            values_hp[0,0,    :,   0].fill_(0)             
-        else:
-            values_hp[0,0, 1:-1,   0] = sd.halo_eta[1]
-        # --------------------------------------------------------------------------------- right
-        if isinstance(sd.neig['right'], int):
-            values_hp[0,0,    :, -1].fill_(0)              
-        else:
-            values_hp[0,0, 1:-1, -1] = sd.halo_eta[2]
-        # --------------------------------------------------------------------------------- top
-        if isinstance(sd.neig['top'], int):
-            values_hp[0,0,0,    :].fill_(0)
-        else:
-            values_hp[0,0,0, 1:-1] = sd.halo_eta[3]
-
-        return values_hp
-
+        values_hp[0,0,:,-1].fill_(0)     
+        values_hp[0,0,:,0].fill_(0)
+        values_hp[0,0,-1,:].fill_(0)  
+        values_hp[0,0,0,:].fill_(0)
+        return values_hp  
     
-    def boundary_condition_eta1(self, eta1, eat1_p, sd): # Amin:: delete nny etc instead use -1 # use tensor.add()# check is dimension applys inside the ()
-        eat1_p[0,0,1:-1,1:-1] = eta1[0,0,:,:]
-        # -------------------------------------------------------------------------------- bottom
-        if isinstance(sd.neig['bottom'], int):
-            eat1_p[0,0,-1,    :].fill_(0)
-        else:
-            eat1_p[0,0,-1, 1:-1] = sd.halo_eta1[0]
-        # --------------------------------------------------------------------------------- left
-        if isinstance(sd.neig['left'], int): # on the physical boundary
-            eat1_p[0,0,    :,0].fill_(0)
-        else:
-            eat1_p[0,0, 1:-1,0] = sd.halo_eta1[1]
-        # --------------------------------------------------------------------------------- right
-        if isinstance(sd.neig['right'], int): # on the physical boundary
-            eat1_p[0,0,   :,-1].fill_(0)
-        else:
-            eat1_p[0,0,1:-1,-1] = sd.halo_eta1[2]
-        # --------------------------------------------------------------------------------- top
-        if isinstance(sd.neig['top'], int):
-            eat1_p[0,0,0,    :].fill_(0)
-        else:
-            eat1_p[0,0,0, 1:-1] = sd.halo_eta1[3]
-        
-        return eat1_p
+    def boundary_condition_eta1(self, eta1, eta1_p):
+#         update_halos_single(eta1)
+        eta1_p[0,0,1:-1,1:-1] = eta1[0,0,:,:]
+        eta1_p[0,0,:,-1].fill_(0)     
+        eta1_p[0,0,:,0].fill_(0)
+        eta1_p[0,0,-1,:].fill_(0)  
+        eta1_p[0,0,0,:].fill_(0)
+        return eta1_p  
     
-        
-    def update_halo_k_uu(self, sd):
-        # --------------------------------------------------------------------------------- bottom
-        neig0 = sd.neig['bottom']
-        if not isinstance(neig0, int):
-            sd.k_uu[0,0, -1, 1:-1] = sd.halo_k_uu[0]
-        # --------------------------------------------------------------------------------- left
-        neig1 = sd.neig['left']
-        if not isinstance(neig1, int): # has neighbour
-            sd.k_uu[0,0, 1:-1, 0] = sd.halo_k_uu[1]
-        # --------------------------------------------------------------------------------- right
-        neig2 = sd.neig['right']
-        if not isinstance(neig2, int):
-            sd.k_uu[0,0, 1:-1, -1] = sd.halo_k_uu[2]
-        # --------------------------------------------------------------------------------- top
-        neig3 = sd.neig['top']
-        if not isinstance(neig3, int):
-            sd.k_uu[0,0, 0, 1:-1] = sd.halo_k_uu[3]
-        return
- 
-
-    def update_halo_k_vv(self, sd):
-        # --------------------------------------------------------------------------------- bottom
-        neig0 = sd.neig['bottom']
-        if not isinstance(neig0, int):
-            sd.k_vv[0,0, -1, 1:-1] = sd.halo_k_vv[0]
-        # --------------------------------------------------------------------------------- left
-        neig1 = sd.neig['left']
-        if not isinstance(neig1, int): # has neighbour
-            sd.k_vv[0,0,1:-1,0] = sd.halo_k_vv[1]
-        # --------------------------------------------------------------------------------- right
-        neig2 = sd.neig['right']
-        if not isinstance(neig2, int): # has neighbour
-            sd.k_vv[0,0,1:-1,-1] = sd.halo_k_vv[2]
-        # --------------------------------------------------------------------------------- top
-        neig3 = sd.neig['top']
-        if not isinstance(neig3, int):
-            sd.k_vv[0,0, 0, 1:-1] = sd.halo_k_vv[3]
-        return
-    
-    
-    def PG_vector(self, values_uu, values_vv, values_u, values_v, k3, dx, sd):
-        sd.k_u = 0.25 * dx * torch.abs(1/2 * (dx**-2) * (torch.abs(values_u) * dx + torch.abs(values_v) * dx) * self.diff(values_uu)) / \
+    def PG_vector(self, values_uu, values_vv, values_u, values_v, k3):
+        k_u = 0.25 * dx * torch.abs(1/2 * (dx**-2) * (torch.abs(values_u) * dx + torch.abs(values_v) * dx) * self.diff(values_uu)) / \
             (1e-03  + (torch.abs(self.xadv(values_uu)) * (dx**-2) + torch.abs(self.yadv(values_uu)) * (dx**-2)) / 2)
 
-        sd.k_v = 0.25 * dx * torch.abs(1/2 * (dx**-2) * (torch.abs(values_u) * dx + torch.abs(values_v) * dx) * self.diff(values_vv)) / \
+        k_v = 0.25 * dx * torch.abs(1/2 * (dx**-2) * (torch.abs(values_u) * dx + torch.abs(values_v) * dx) * self.diff(values_vv)) / \
             (1e-03  + (torch.abs(self.xadv(values_vv)) * (dx**-2) + torch.abs(self.yadv(values_vv)) * (dx**-2)) / 2)
 
-        sd.k_uu = F.pad(torch.minimum(sd.k_u, k3) , (1, 1, 1, 1), mode='constant', value=0)
-        sd.k_vv = F.pad(torch.minimum(sd.k_v, k3) , (1, 1, 1, 1), mode='constant', value=0)
+        k_uu = F.pad(torch.minimum(k_u, k3) , (1, 1, 1, 1), mode='constant', value=0)
+        k_vv = F.pad(torch.minimum(k_v, k3) , (1, 1, 1, 1), mode='constant', value=0)
         
-        self.update_halo_k_uu(sd)
-        self.update_halo_k_vv(sd)
+        update_halos([k_uu[:,:,1:-1, 1:-1], k_vv[:,:,1:-1, 1:-1]], all_tensors=False)
         
-        sd.k_x = 0.5 * (sd.k_u * self.diff(values_uu) + self.diff(values_uu * sd.k_uu) - values_u * self.diff(sd.k_uu))
-        sd.k_y = 0.5 * (sd.k_v * self.diff(values_vv) + self.diff(values_vv * sd.k_vv) - values_v * self.diff(sd.k_vv))
-        return
+        k_x = 0.5 * (k_u * self.diff(values_uu) + self.diff(values_uu * k_uu) - values_u * self.diff(k_uu))
+        k_y = 0.5 * (k_v * self.diff(values_vv) + self.diff(values_vv * k_vv) - values_v * self.diff(k_vv))
+        return k_x, k_y
 
-
-    def PG_scalar(self, sd, eta1_p, eta1, values_u, values_v, k3, dx):
-        sd.k_u = 0.25 * dx * torch.abs(1/2 * (dx**-2) * (torch.abs(values_u) * dx + torch.abs(values_v) * dx) * self.diff(eta1_p)) / \
-            (1e-03 + (torch.abs(self.xadv(eta1_p)) * (dx**-2) + torch.abs(self.yadv(eta1_p)) * (dx**-2)) / 2)
-        sd.k_uu = F.pad(torch.minimum(sd.k_u, k3) , (1, 1, 1, 1), mode='constant', value=0)
-        self.update_halo_k_uu(sd)
-        return 0.5 * (sd.k_u * self.diff(eta1_p) + self.diff(eta1_p * sd.k_uu) - eta1 * self.diff(sd.k_uu))
-
-
-    def forward(self, sd, dt, rho):
-        self.update_halos(sd)
-        for ele in range(no_domains):
-            self.boundary_condition_u(sd[ele].values_u,sd[ele].values_uu, sd[ele])
-            self.boundary_condition_v(sd[ele].values_v,sd[ele].values_vv, sd[ele])
-    # -------------------------------------------------------------------------------------------------------------------
-            self.PG_vector(sd[ele].values_uu, sd[ele].values_vv, sd[ele].values_u, sd[ele].values_v, sd[ele].k3, sd[ele].dx, sd[ele])
-            # ===================================================================================================================================== 1-step velocity solver
-            sd[ele].values_u = sd[ele].values_u + sd[ele].k_x * dt - sd[ele].values_u * self.xadv(sd[ele].values_uu) * dt - sd[ele].values_v * self.yadv(sd[ele].values_uu) * dt
-            sd[ele].values_v = sd[ele].values_v + sd[ele].k_y * dt - sd[ele].values_u * self.xadv(sd[ele].values_vv) * dt - sd[ele].values_v * self.yadv(sd[ele].values_vv) * dt
-            # ============================================================================================================================================================
-            sd[ele].values_u = sd[ele].values_u - self.xadv(self.boundary_condition_h(sd[ele].values_h,sd[ele].values_hp, sd[ele])) * dt
-            sd[ele].values_v = sd[ele].values_v - self.yadv(self.boundary_condition_h(sd[ele].values_h,sd[ele].values_hp, sd[ele])) * dt
-
-            sd[ele].sigma_q = torch.pow(torch.pow(sd[ele].values_u,2) + torch.pow(sd[ele].values_v,2),0.5) * 0.055**2 / (torch.maximum( sd[ele].k1,
-               sd[ele].dx*self.cmm(self.boundary_condition_eta(sd[ele].values_H+sd[ele].values_h,sd[ele].values_hp, sd[ele]))*0.01+(sd[ele].values_H+sd[ele].values_h)*0.99 )**(4/3))
-
-            sd[ele].values_u = sd[ele].values_u / (1 + sd[ele].sigma_q * dt / rho)
-            sd[ele].values_v = sd[ele].values_v / (1 + sd[ele].sigma_q * dt / rho)
-
-    # -------------------------------------------------------------------------------------------------------------------
-            self.boundary_condition_u(sd[ele].values_u,sd[ele].values_uu, sd[ele])
-            self.boundary_condition_v(sd[ele].values_v,sd[ele].values_vv, sd[ele])
-            sd[ele].eta1 = torch.maximum(sd[ele].k2,(sd[ele].values_H+sd[ele].values_h))
-            sd[ele].eta2 = torch.maximum(sd[ele].k1,(sd[ele].values_H+sd[ele].values_h))
-
-    # -------------------------------------------------------------------------------------------------------------------
-            sd[ele].b = beta * rho * (-self.xadv(self.boundary_condition_eta1(sd[ele].eta1,sd[ele].eta1_p, sd[ele])) * sd[ele].values_u - \
-                               self.yadv(self.boundary_condition_eta1(sd[ele].eta1,sd[ele].eta1_p, sd[ele])) * sd[ele].values_v - \
-                               sd[ele].eta1 * self.xadv(sd[ele].values_uu) - sd[ele].eta1 * self.yadv(sd[ele].values_vv) + \
-                               self.PG_scalar(sd[ele], self.boundary_condition_eta1(sd[ele].eta1,sd[ele].eta1_p, sd[ele]), sd[ele].eta1, sd[ele].values_u, sd[ele].values_v, sd[ele].k3, sd[ele].dx) - \
-                               self.cmm(self.boundary_condition_dif_h(sd[ele].dif_values_h,sd[ele].dif_values_hh, sd[ele])) / dt + sd[ele].source_h) / (dt * sd[ele].eta2)
-            sd[ele].values_h_old = sd[ele].values_h.clone()
-
-    # -------------------------------------------------------------------------------------------------------------------
-            for i in range(2):
-                sd[ele].values_hh = sd[ele].values_hh - (-self.diff(self.boundary_condition_hh(sd[ele].values_hh,sd[ele].values_hhp, sd[ele])) + beta * rho / (dt**2 * sd[ele].eta2) * sd[ele].values_hh) / \
-                            (self.diag + beta * rho / (dt**2 * sd[ele].eta2)) + sd[ele].b / (self.diag + beta * rho / (dt**2 * sd[ele].eta2))
-            sd[ele].values_h = sd[ele].values_h + sd[ele].values_hh
-            sd[ele].dif_values_h = sd[ele].values_h - sd[ele].values_h_old
-
-    # -------------------------------------------------------------------------------------------------------------------
-            sd[ele].values_u = sd[ele].values_u - self.xadv(self.boundary_condition_hh(sd[ele].values_hh,sd[ele].values_hhp, sd[ele])) * dt / rho
-            sd[ele].values_v = sd[ele].values_v - self.yadv(self.boundary_condition_hh(sd[ele].values_hh,sd[ele].values_hhp, sd[ele])) * dt / rho
-            
-        return sd[0].values_hh#, sd[1].values_hh,sd[2].values_hh,sd[3].values_hh
-
-model = AI4SWE().to(device)
-# model = torch.compile(AI4SWE().to(device))
-for ele in range(no_domains):
-    sd[ele].to(device)
-
-start = time.time()
-istep=0
-
-image_folder = '/home/an619/Desktop/git/AI/RMS/semi/2D/Linear_results/images/'
-def plot_subdomains(no_domains, no_domains_x, no_domains_y, sd, img):
-    # Calculate the size of each subplot
-    subplot_size_x = 3.11  # You can adjust this value as needed
-    subplot_size_y = 2  # You can adjust this value as needed
-
-    # Calculate the total figure size
-    fig_size_x = subplot_size_x * no_domains_x
-    fig_size_y = subplot_size_y * no_domains_y
+    def PG_scalar(self, values_hh, values_h, values_u, values_v, k3):
+        k_u = 0.25 * dx * torch.abs(1/2 * (dx**-2) * (torch.abs(values_u) * dx + torch.abs(values_v) * dx) * self.diff(values_hh)) / \
+            (1e-03 + (torch.abs(self.xadv(values_hh)) * (dx**-2) + torch.abs(self.yadv(values_hh)) * (dx**-2)) / 2)  
     
-    fig, axs = plt.subplots(no_domains_y, no_domains_x, figsize=(2*fig_size_x, 2*fig_size_y))
+        k_uu = F.pad(torch.minimum(k_u, k3) , (1, 1, 1, 1), mode='constant', value=0)
+        update_halos([k_uu[:,:,1:-1, 1:-1]], all_tensors=False)
+        return 0.5 * (k_u * self.diff(values_hh) + self.diff(values_hh * k_uu) - values_h * self.diff(k_uu))        
 
+    def forward(self, values_u, values_uu, values_v, values_vv, values_H, values_h, values_hp, dt, rho, k1, k2, k3, eta1_p, source_h, dif_values_h, dif_values_hh, values_hh, values_hhp, eta, eta1):
+        values_uu = self.boundary_condition_u(values_u,values_uu)
+        values_vv = self.boundary_condition_v(values_v,values_vv)
+
+        [k_x,k_y] = self.PG_vector(values_uu, values_vv, values_u, values_v, k3)
+
+        values_u = values_u + k_x * dt - values_u * self.xadv(values_uu) * dt - values_v * self.yadv(values_uu) * dt   
+        values_v = values_v + k_y * dt - values_u * self.xadv(values_vv) * dt - values_v * self.yadv(values_vv) * dt 
+        values_u = values_u - self.xadv(self.boundary_condition_h(values_h,values_hp)) * dt
+        values_v = values_v - self.yadv(self.boundary_condition_h(values_h,values_hp)) * dt     
+
+        sigma_q = (values_u**2 + values_v**2)**0.5 * 0.055**2 / (torch.maximum( k1,
+            dx*self.cmm(self.boundary_condition_eta(eta,values_hp))*0.01+(values_H+values_h)*0.99 )**(4/3))
+
+        values_u = values_u / (1 + sigma_q * dt / rho)
+        values_v = values_v / (1 + sigma_q * dt / rho)
+
+        values_uu = self.boundary_condition_u(values_u,values_uu)
+        values_vv = self.boundary_condition_v(values_v,values_vv)
+#         eta1 = torch.maximum(k2,(values_H+values_h))
+        eta2 = torch.maximum(k1,(values_H+values_h))
+        # dbug = eta2 -> eta1
+        b = beta * rho * (-self.xadv(self.boundary_condition_eta1(eta1,eta1_p)) * values_u - \
+                           self.yadv(self.boundary_condition_eta1(eta1,eta1_p)) * values_v - \
+                           eta1 * self.xadv(values_uu) - eta1 * self.yadv(values_vv) + \
+                           self.PG_scalar(self.boundary_condition_eta1(eta1,eta1_p), eta1, values_u, values_v, k3) - \
+                           self.cmm(self.boundary_condition_dif_h(dif_values_h,dif_values_hh)) / dt + source_h) / (dt * eta2)   
+        values_h_old = values_h.clone()
+        for i in range(2):
+            values_hh = values_hh - (-self.diff(self.boundary_condition_hh(values_hh,values_hhp)) + beta * rho / (dt**2 * eta2) * values_hh) / \
+                    (diag + beta * rho / (dt**2 * eta2)) + b / (diag + beta * rho / (dt**2 * eta2))
+        values_h = values_h + values_hh
+        dif_values_h = values_h - values_h_old 
+        values_u = values_u - self.xadv(self.boundary_condition_hh(values_hh,values_hhp)) * dt / rho
+        values_v = values_v - self.yadv(self.boundary_condition_hh(values_hh,values_hhp)) * dt / rho 
+
+        return values_u, values_v, values_h, values_hh, b, dif_values_h, sigma_q
+
+model = torch.compile(AI4SWE().to(device))
+
+
+def get_source(time, rate1, rate2, rate3):
+    '''
+    sets the source based on variable time compatible with the real data
+    '''
+    indx = int(time.item() // 900) # 900 is the time interval in the given time series
     
-    for i in range(no_domains):
-        row = no_domains_y - 1 - i // no_domains_x
-        col = i % no_domains_x
-        axs[row, col].imshow(sd[i].values_h[0,0,:,:].cpu()+sd[i].values_H[0,0,:,:].cpu(),vmin=0, vmax=8 )#, cmap='Blues')
-        axs[row, col].axis('off')  # Set axis off
+    for i, s_idx in enumerate(source_1_sd_idx):
+        source_h[0,0,y_upstream1[i],x_upstream1[i]]     = ((rate1[indx+1] - rate1[indx])/900 * (time%900) + rate1[indx])#/(4**(source1_ratio[i]-1))
     
-
-    plt.subplots_adjust(wspace=0, hspace=0, left=0, right=1, bottom=0, top=1)  # Remove space between subplots and padding
-    plt.savefig(f'{image_folder}{img}.png', dpi=200, bbox_inches='tight')
-    plt.close()
-    
-import matplotlib.patches as patches
-
-def plot_subdomains_with_borders(no_domains, no_domains_x, no_domains_y, sd, img):
-    subplot_size_x = 3.11
-    subplot_size_y = 2
-
-    fig_size_x = subplot_size_x * no_domains_x
-    fig_size_y = subplot_size_y * no_domains_y
-    
-    fig, axs = plt.subplots(no_domains_y, no_domains_x, figsize=(2*fig_size_x, 2*fig_size_y))
-
-    for i in range(no_domains):
-        row = no_domains_y - 1 - i // no_domains_x
-        col = i % no_domains_x
-        image = sd[i].values_h[0,0,:,:].cpu()+sd[i].values_H[0,0,:,:].cpu()
-        axs[row, col].imshow(image)
-        axs[row, col].axis('off')
-
-        # Display the size of the image on top of the image
-        axs[row, col].text(0.5, 0.7, f"Size: {image.shape[0],image.shape[1]}", ha='center', va='top', transform=axs[row, col].transAxes, color='white', fontsize=14)
-        axs[row, col].text(0.5, 0.75, f"Resolution: {sd[i].nx//sd[1].nx}x", ha='center', va='top', transform=axs[row, col].transAxes, color='white', fontsize=14)
-        axs[row, col].text(0.5, 0.8, f"Subdomain {i}", ha='center', va='top', transform=axs[row, col].transAxes, color='white', fontsize=14)
-
-        # Add border to the image
-        rect = patches.Rectangle((0,0),1,1,linewidth=1,edgecolor='white',facecolor='none', transform=axs[row, col].transAxes)
-        axs[row, col].add_patch(rect)
-
-    plt.subplots_adjust(wspace=0, hspace=0, left=0, right=1, bottom=0, top=1)
-    plt.savefig(f'{image_folder}{img}_bc.png', dpi=200, bbox_inches='tight')
-    plt.close()
+    for i, s_idx in enumerate(source_2_sd_idx):
+        source_h[0,0,y_upstream2[i]-11,x_upstream2[i]]  = ((rate2[indx+1] - rate2[indx])/900 * (time%900) + rate2[indx])#/(4**(source2_ratio[i]-1))
+        
+    for i, s_idx in enumerate(source_3_sd_idx):
+        source_h[0,0,y_upstream3[i]-4,x_upstream3[i]]   = ((rate3[indx+1] - rate3[indx])/900 * (time%900) + rate3[indx])#/(4**(source3_ratio[i]-1))
+        
 
 
-# with open(file_name, 'a', newline='') as csvfile:
 with torch.no_grad():
-    while istep <= 1:
-        img = int(real_time/900)
-        get_source(real_time)
-        # note:: I can take sd out to here which increases the speed as halo update is not needed twice
+    for itime in range(1,5400+1):
+        get_source(real_time, rate1, rate2, rate3)
         for t in range(2):
-            conv0  = model( sd, dt, rho )
+            eta1 = torch.maximum(k2,(values_H+values_h))
+            eta = values_H+values_h
+            update_halos([values_u, values_v, values_h, values_hh, dif_values_h, eta, eta1])
+            [values_u, values_v, values_h, values_hh, b, dif_values_h, sigma_q] = model(values_u, values_uu, values_v, values_vv, values_H, values_h, 
+                    values_hp, dt, rho, k1, k2, k3, eta1_p, source_h, dif_values_h, dif_values_hh, values_hh, values_hhp, eta, eta1)
 
-        real_time = real_time + dt
-        istep +=1
 
-# -----------------------------------------------------------------------------------------------------------------------------------------------------------
-        if np.max(np.abs(conv0.cpu().detach().numpy())) > 10.0:
-            print('sd0, Not converged !!!!!!')
-            break
 
-        if istep == 2 or istep==100800 or istep==201600 or istep==302400 or istep==403200:
-            img = int(real_time/900)
-            print(f'Time step:, {istep}, img = {int(real_time/900)} , time in seconds = {real_time:.0f}', 'wall clock:', (time.time()-start)/60)
-            for element in sd:
-#                     plt.imshow((element.values_h+element.values_H)[0,0,:,:].cpu().detach().numpy(),vmin=0, vmax=6, cmap='Blues' )
-#                     plt.axis('off')
-#                     plt.savefig(f'/home/an619/Desktop/git/AI/RMS/semi/2D/Linear_results/{img}_{element.index}_bc.png', dpi=200, bbox_inches='tight')
-                np.save(f'/home/an619/Desktop/git/AI/RMS/semi/2D/Linear_results/flex_vel/L/{istep}_{element.index}', arr=((element.values_u**2+element.values_v**2)**0.5).cpu().detach().numpy()[0,0,:,:])
-                plt.imshow((((element.values_u**2+element.values_v**2))**0.5)[0,0,:,:].cpu().detach().numpy(),vmin=0, vmax=2.5, cmap='turbo' )
-                plt.axis('off')
-                plt.savefig(f'/home/an619/Desktop/git/AI/RMS/semi/2D/Linear_results/flex_vel/L/{img}_{element.index}_bc.png', dpi=200, bbox_inches='tight')
-    end = time.time()
-    print('time',(end-start),istep)
+
+
+
+
+
+
+
