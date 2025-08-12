@@ -58,7 +58,7 @@ git clone https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids.gi
 }
 ```
 <!-- <img src="https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids/blob/main/Demo/flexible_L.png" width="512" /> -->
-<img src="https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids/blob/main/Demo/flexible_L.png" width="1024" />
+<img src="https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids/blob/main/Demo/flexible_L.jpg" width="1024" />
 
 
 ---
