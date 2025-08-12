@@ -30,7 +30,7 @@ git clone https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids.gi
 ```
 
 ---
-### Carlisle 2005 Flood Event Modeled with NN4PDEs
+### Carlisle 2005 Flood Event Modelled with NN4PDEs
 ```geojson
 {
   "type": "FeatureCollection",
@@ -59,8 +59,7 @@ git clone https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids.gi
 ```
 <!-- <img src="https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids/blob/main/Demo/flexible_L.png" width="512" /> -->
 <img src="https://github.com/Amin-Nadimy/Flood-Modelling-on-Non-Uniform-Grids/blob/main/Demo/flexible_L.jpg" width="1024" />
-
-
+          
 ---
 ## Repository Structure
 ```plaintext
